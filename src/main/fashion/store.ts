@@ -33,6 +33,7 @@ export type PhotoVideoJob = {
   id: string;
   instance: string;
   owner: string;
+  groupChatId?: string;
   product?: Asset;
   modelPhoto?: Asset;
   plan?: PhotoVideoPlan;

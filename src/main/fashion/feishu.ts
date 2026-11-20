@@ -8,13 +8,14 @@ import { bridgeSchema, Decision, FashionError, type Run,RunMode, RunState } from
 import { t } from '../i18n';
 import type { FeishuInstanceConfig } from '../im/types';
 import { fail,FashionFailure } from './errors';
-import { FeishuVideoDraft } from './feishuVideoDraft';
+import { FeishuVideoDraft, type FeishuVideoRecipient } from './feishuVideoDraft';
 import { FeishuPhotoVideoQueue } from './photoVideo';
 import type { FashionService } from './service';
 import type { PhotoVideoJob } from './store';
 
 const base = 'https://open.feishu.cn/open-apis';
 const maxAttachment = 30_000_000;
+const videoMessageType = 'media';
 const command = {
   Create: 'create', Status: 'status', Pending: 'pending', ApprovePlan: 'approve-plan',
   Review: 'review', Cancel: 'cancel', Deliver: 'deliver', Video: 'video',
@@ -90,11 +91,12 @@ export class FashionFeishu {
       return input.imageFile || input.imageUnavailable ? '' : t('fashionBotDenied');
     }
     const key = `${account.instanceId}/${input.messageId}`;
-    const recipient = { instance: account.instanceId, owner: input.senderId };
-    if (input.card) return this.videoDrafts.action(recipient, input.messageId, input.card);
-    if (input.imageUnavailable) return this.videoDrafts.photoUnavailable(recipient, input.conversationId);
+    const recipient = { instance: account.instanceId, owner: input.senderId, groupChatId: input.groupChatId };
+    const conversation = input.groupChatId ?? input.conversationId;
+    if (input.card) return this.videoDrafts.action(recipient, input.messageId, input.card, input.conversationId);
+    if (input.imageUnavailable) return this.videoDrafts.photoUnavailable(recipient, conversation);
     if (input.imageFile) {
-      return this.videoDrafts.receive(recipient, input.conversationId, key, input.imageFile);
+      return this.videoDrafts.receive(recipient, conversation, key, input.imageFile);
     }
     return this.service.store.atomic(() => {
       const duplicate = this.service.store.getMessage(key);
@@ -115,8 +117,10 @@ export class FashionFeishu {
     const [prefix, action, id, value, choice, ...notes] = (input.command ?? '').trim().split(/\s+/);
     if (prefix !== '/wft') return t('fashionBotUsage');
     if (action === command.Video) {
-      return this.videoDrafts.open({ instance: account.instanceId, owner }, input.conversationId, id === 'new');
+      return this.videoDrafts.open({ instance: account.instanceId, owner, groupChatId: input.groupChatId },
+        input.groupChatId ?? input.conversationId, id === 'new');
     }
+    if (input.groupChatId) return t('fashionBotDenied');
     const owned = (run: Run) => run.recipient?.instance === account.instanceId && run.recipient.owner === owner;
     if (action === command.Create) {
       const product = this.service.store.products().find(item => item.sku === id);
@@ -216,7 +220,7 @@ export class FashionFeishu {
           this.service.store.saveDelivery(id, saved);
         }
         this.service.approved(run.id, run.version);
-        type = 'file';
+        type = videoMessageType;
         content = { file_key: saved.fileKey ?? fail(FashionError.Provider) };
       }
       if (this.stopped || !this.destination(run)) return;
@@ -253,17 +257,15 @@ export class FashionFeishu {
     return this.account(job.instance);
   }
 
-  private async sendVideoCard(recipient: { instance: string; owner: string }, card: object): Promise<string | undefined> {
+  private async sendVideoCard(recipient: FeishuVideoRecipient, card: object): Promise<string | undefined> {
     const settings = this.service.store.getSettings();
     const account = this.account(recipient.instance);
     if (!account || this.stopped || settings.feishuInstance !== recipient.instance || settings.feishuOwner !== recipient.owner) return;
     const token = await this.token(account);
     const latest = this.service.store.getSettings();
     if (this.stopped || latest.feishuInstance !== recipient.instance || latest.feishuOwner !== recipient.owner) return;
-    const response = await this.api('/im/v1/messages?receive_id_type=open_id', {
-      method: 'POST', body: JSON.stringify({
-        receive_id: recipient.owner, msg_type: 'interactive', content: JSON.stringify(card),
-      }),
+    const response = await this.sendVideoMessage(recipient, {
+      msg_type: 'interactive', content: JSON.stringify(card),
     }, token).catch(error => {
       if (error instanceof SendRejected) console.warn('[WEFTORY] Feishu card send rejected:', error.message);
       throw error;
@@ -284,11 +286,19 @@ export class FashionFeishu {
       content = { file_key: job.fileKey };
     }
     if (!this.photoAccount(job)) fail(FashionError.Setup);
-    await this.api('/im/v1/messages?receive_id_type=open_id', {
-      method: 'POST', body: JSON.stringify({
-        receive_id: job.owner, msg_type: text === undefined ? 'file' : 'text', content: JSON.stringify(content),
-        uuid: createHash('sha256').update(job.id).update(text ?? 'mp4').digest('hex').slice(0, 40),
-      }),
+    await this.sendVideoMessage(job, {
+      msg_type: text === undefined ? videoMessageType : 'text', content: JSON.stringify(content),
+      uuid: createHash('sha256').update(job.id).update(text ?? 'mp4').digest('hex').slice(0, 40),
+    }, token).catch(error => {
+      if (error instanceof SendRejected) console.warn('[WEFTORY] Feishu video message rejected:', error.message);
+      throw error;
+    });
+  }
+
+  private sendVideoMessage(recipient: FeishuVideoRecipient, body: Record<string, string>, token: string) {
+    const receiveIdType = recipient.groupChatId ? 'chat_id' : 'open_id';
+    return this.api(`/im/v1/messages?receive_id_type=${receiveIdType}`, {
+      method: 'POST', body: JSON.stringify({ ...body, receive_id: recipient.groupChatId ?? recipient.owner }),
     }, token);
   }
 

@@ -9,7 +9,7 @@ import type { FashionService } from './service';
 import { type PhotoVideoDraft, PhotoVideoState } from './store';
 
 type CardInput = NonNullable<z.infer<typeof bridgeSchema>['card']>;
-type Recipient = { instance: string; owner: string };
+export type FeishuVideoRecipient = { instance: string; owner: string; groupChatId?: string };
 
 const plainText = (content: string) => ({ tag: 'plain_text', content });
 const line = (content: string) => ({ tag: 'div', text: plainText(content) });
@@ -22,11 +22,11 @@ export class FeishuVideoDraft {
   constructor(
     private readonly service: FashionService,
     private readonly inboundDirectory: () => string,
-    private readonly send: (recipient: Recipient, card: object) => Promise<string | undefined>,
+    private readonly send: (recipient: FeishuVideoRecipient, card: object) => Promise<string | undefined>,
     private readonly wakeVideoQueue: () => void,
   ) {}
 
-  open(recipient: Recipient, conversation: string, restart: boolean): string {
+  open(recipient: FeishuVideoRecipient, conversation: string, restart: boolean): string {
     const key = this.key(recipient);
     if (this.active.has(key)) return t('fashionVideoDraftBusy');
     const store = this.service.store;
@@ -40,7 +40,7 @@ export class FeishuVideoDraft {
     return '';
   }
 
-  receive(recipient: Recipient, conversation: string, messageKey: string, imageFile: string): string {
+  receive(recipient: FeishuVideoRecipient, conversation: string, messageKey: string, imageFile: string): string {
     const key = this.key(recipient);
     const { store, media } = this.service;
     const draft = store.getPhotoDraft(key);
@@ -72,14 +72,18 @@ export class FeishuVideoDraft {
     return reply;
   }
 
-  photoUnavailable(recipient: Recipient, conversation: string): string {
+  photoUnavailable(recipient: FeishuVideoRecipient, conversation: string): string {
     const draft = this.service.store.getPhotoDraft(this.key(recipient));
     return draft && !draft.confirmed && draft.conversation === chatId(conversation) ? t('fashionVideoDraftDownloadError') : '';
   }
 
-  action(recipient: Recipient, messageId: string, input: CardInput): string {
-    const key = this.key(recipient);
+  action(recipient: FeishuVideoRecipient, messageId: string, input: CardInput, callbackChat?: string): string {
     const { store, providers } = this.service;
+    const privateDraft = store.getPhotoDraft(this.key(recipient));
+    if (privateDraft?.id !== input.draftId && callbackChat && /^oc_[\w-]+$/.test(callbackChat)) {
+      recipient = { ...recipient, groupChatId: callbackChat };
+    }
+    const key = this.key(recipient);
     const draft = store.getPhotoDraft(key);
     if (!draft || draft.id !== input.draftId || draft.revision !== input.revision
       || draft.cardMessageId !== messageId || draft.confirmed) return t('fashionVideoDraftStale');
@@ -126,8 +130,9 @@ export class FeishuVideoDraft {
     await Promise.allSettled(this.active.values());
   }
 
-  private key(recipient: Recipient): string {
-    return `${recipient.instance}/${recipient.owner}`;
+  private key(recipient: FeishuVideoRecipient): string {
+    const key = `${recipient.instance}/${recipient.owner}`;
+    return recipient.groupChatId ? `${key}/${recipient.groupChatId}` : key;
   }
 
   private run(key: string, work: () => Promise<void>): void {
@@ -138,7 +143,7 @@ export class FeishuVideoDraft {
     }));
   }
 
-  private async sendCard(recipient: Recipient, draft: PhotoVideoDraft, notice?: string): Promise<void> {
+  private async sendCard(recipient: FeishuVideoRecipient, draft: PhotoVideoDraft, notice?: string): Promise<void> {
     const button = (action: typeof FeishuVideoCardAction[keyof typeof FeishuVideoCardAction], title: string) => {
       const callback = `${FeishuVideoCardNamespace}:${action}:${draft.id}:${draft.revision}`;
       return { tag: 'button', behaviors: [{ type: 'callback', value: { action: callback } }],
@@ -148,12 +153,15 @@ export class FeishuVideoDraft {
     if (draft.plan) {
       elements.push(line(`${t('fashionVideoDraftModelTitle')}\n${draft.plan.model}`),
         line(`${t('fashionVideoDraftScriptTitle')}\n${draft.plan.storyboard}`),
-        line(t('fashionVideoDraftCharge')), button(FeishuVideoCardAction.Confirm, t('fashionVideoDraftConfirm')));
+        line(t(recipient.groupChatId ? 'fashionGroupVideoDraftCharge' : 'fashionVideoDraftCharge')),
+        button(FeishuVideoCardAction.Confirm, t('fashionVideoDraftConfirm')));
       await this.publish(recipient, draft, this.card(t('fashionVideoDraftReview'), elements));
       return;
     }
-    elements.push(line(t(draft.product ? 'fashionVideoDraftProductReady' : 'fashionVideoDraftProductMissing')),
-      line(t(draft.modelPhoto ? 'fashionVideoDraftModelReady' : 'fashionVideoDraftModelMissing')));
+    elements.push(line(t(draft.product ? 'fashionVideoDraftProductReady'
+      : recipient.groupChatId ? 'fashionGroupVideoDraftProductMissing' : 'fashionVideoDraftProductMissing')),
+    line(t(draft.modelPhoto ? 'fashionVideoDraftModelReady'
+      : recipient.groupChatId ? 'fashionGroupVideoDraftModelMissing' : 'fashionVideoDraftModelMissing')));
     if (draft.product) {
       const submit = button(FeishuVideoCardAction.Draft, t('fashionVideoDraftFill'));
       elements.push({ tag: 'form', name: 'video_form', elements: [
@@ -168,7 +176,7 @@ export class FeishuVideoDraft {
     await this.publish(recipient, draft, this.card(t('fashionVideoDraftHeader'), elements));
   }
 
-  private async publish(recipient: Recipient, draft: PhotoVideoDraft, card: object): Promise<void> {
+  private async publish(recipient: FeishuVideoRecipient, draft: PhotoVideoDraft, card: object): Promise<void> {
     const cardMessageId = await this.send(recipient, card);
     if (cardMessageId) this.service.store.savePhotoDraft(this.key(recipient), { ...draft, cardMessageId });
   }

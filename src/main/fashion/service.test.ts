@@ -240,6 +240,66 @@ describe('WEFTORY durable production', () => {
     expect(store.pendingPhotoVideos()).toHaveLength(0);
   });
 
+  test('keeps Feishu group cards, approvals, and recipients in their originating group', async () => {
+    const photo = asset('image/png');
+    const media = { importImage: vi.fn(async () => photo) } as unknown as FashionMedia;
+    const { service, store, settings } = fixture(media);
+    const account = { instanceId: 'abc12345-bot', instanceName: 'Fixture Bot', enabled: true, domain: 'feishu',
+      appId: 'app', appSecret: 'secret' } as FeishuInstanceConfig;
+    store.saveSettings({ ...settings, feishuInstance: account.instanceId, feishuOwner: 'ou_owner' }, Buffer.from('fixture'));
+    const fetcher = vi.fn<typeof fetch>().mockImplementation(async url => String(url).includes('tenant_access_token')
+      ? Response.json({ code: 0, tenant_access_token: 'token' })
+      : Response.json({ code: 0, data: { message_id: 'om_card' } }));
+    vi.stubGlobal('fetch', fetcher);
+    const bot = new FashionFeishu(service, () => [account], () => '/tmp');
+    cleanup.push(() => bot.stop());
+    const base = { accountId: 'abc12345', senderId: 'ou_owner', groupChatId: 'oc_team', conversationId: 'chat:oc_team' };
+    bot.handle({ ...base, messageId: 'om_g1', command: '/wft video' });
+    const key = 'abc12345-bot/ou_owner/oc_team';
+    await vi.waitFor(() => expect(store.getPhotoDraft(key)?.cardMessageId).toBe('om_card'));
+    expect(fetcher.mock.calls[1]).toEqual([
+      expect.stringContaining('receive_id_type=chat_id'),
+      expect.objectContaining({ body: expect.stringContaining('"receive_id":"oc_team"') }),
+    ]);
+    bot.handle({ ...base, messageId: 'om_g2', imageFile: `${randomUUID()}.jpg`, senderId: 'ou_other' });
+    expect(store.getPhotoDraft(key)?.product).toBeUndefined();
+    bot.handle({ ...base, messageId: 'om_g3', imageFile: `${randomUUID()}.jpg` });
+    await vi.waitFor(() => expect(store.getPhotoDraft(key)?.product).toEqual(photo));
+    const draft = store.getPhotoDraft(key)!;
+    store.savePhotoDraft(key, { ...draft, plan: { model: 'Product only', storyboard: '0–10s: Pan' } });
+    const confirm = { accountId: base.accountId, senderId: base.senderId, messageId: 'om_card',
+      card: { action: FeishuVideoCardAction.Confirm, draftId: draft.id, revision: draft.revision } };
+    bot.handle({ ...confirm, conversationId: 'oc_other' });
+    expect(store.pendingPhotoVideos()).toHaveLength(0);
+    bot.handle({ ...confirm, conversationId: 'oc_team' });
+    expect(store.pendingPhotoVideos()).toEqual([expect.objectContaining({ groupChatId: 'oc_team', owner: 'ou_owner' })]);
+    expect(store.getPhotoDraft('abc12345-bot/ou_owner')).toBeUndefined();
+  });
+
+  test('retries an already uploaded MP4 in the group as a Feishu video message', async () => {
+    const { service, store, providers, settings } = fixture();
+    const account = { instanceId: 'abc12345-bot', enabled: true, domain: 'feishu',
+      appId: 'app', appSecret: 'secret' } as FeishuInstanceConfig;
+    store.saveSettings({ ...settings, feishuInstance: account.instanceId, feishuOwner: 'ou_owner' });
+    store.enqueuePhotoVideo({ id: 'existing-video', instance: account.instanceId, owner: 'ou_owner',
+      groupChatId: 'oc_team', model: DefaultSeedanceModel, state: PhotoVideoState.Ready, fileKey: 'file_v2_uploaded',
+      video: asset('video/mp4'), plan: { model: 'Product only', storyboard: '0–10s: Pan' } });
+    const fetcher = vi.fn<typeof fetch>().mockResolvedValueOnce(Response.json({ code: 0, tenant_access_token: 'token' }))
+      .mockResolvedValueOnce(Response.json({ code: 0, data: { message_id: 'om_video' } }));
+    vi.stubGlobal('fetch', fetcher);
+    const bot = new FashionFeishu(service, () => [account]);
+    cleanup.push(() => bot.stop());
+    bot.recover();
+    await vi.waitFor(() => expect(store.pendingPhotoVideos()).toHaveLength(0));
+    expect(fetcher).toHaveBeenCalledTimes(2);
+    const [url, request] = fetcher.mock.calls[1];
+    expect(url).toContain('receive_id_type=chat_id');
+    expect(JSON.parse(String(request?.body))).toMatchObject({
+      receive_id: 'oc_team', msg_type: 'media', content: JSON.stringify({ file_key: 'file_v2_uploaded' }),
+    });
+    expect(providers.submitVideo).not.toHaveBeenCalled();
+  });
+
   test('uses real FFmpeg to produce a verified 21-second subtitle-burned demo where available', async context => {
     const root = await mkdtemp(path.join(os.tmpdir(), 'WEFTORY 路径 空格-'));
     const db = new Database(':memory:');

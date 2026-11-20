@@ -65,6 +65,7 @@ export const bridgeSchema = z.object({
   senderId: label,
   messageId: label,
   conversationId: label,
+  groupChatId: z.string().regex(/^oc_[\w-]+$/).max(100).optional(),
   command: z.string().max(1600).optional(),
   imageFile: z.string().max(256).regex(/^(?:[\p{L}\p{N}._-]+---)?[\da-f-]{36}\.(?:png|jpe?g)$/iu).optional(),
   imageUnavailable: z.literal(true).optional(),

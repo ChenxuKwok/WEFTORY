@@ -46,25 +46,38 @@ export default {
     api.on('before_dispatch', async (event, context) => {
       const channel = context.channelId || event.channel;
       if (channel !== 'feishu') return;
+      const groupChatId = event.isGroup === true
+        ? /^(?:(?:feishu:)?chat:)?(oc_[\w-]+)(?::.*)?$/u.exec(context.conversationId ?? '')?.[1]
+        : undefined;
+      if (event.isGroup !== false && !groupChatId) return;
       const content = event.content.trim();
       const command = /^\/wft(?:\s|$)/.test(content) ? content
-        : /^制作视频[。！!]?$/u.test(content) && event.isGroup === false ? '/wft video' : undefined;
+        : /^制作视频[。！!]?$/u.test(content) ? '/wft video' : undefined;
       // The Feishu channel substitutes a downloaded bare image with its local media path.
-      const imagePath = !command && event.isGroup === false && inboundDirectory
-        ? [content, event.body?.trim()].find(candidate => candidate && path.dirname(candidate) === inboundDirectory
+      // Rich text used to @ the bot in a group can put the attachment on its own line.
+      const candidates = [content, event.body?.trim()].filter((value): value is string => Boolean(value));
+      const mediaLines = groupChatId ? candidates.flatMap(value => value.split('\n').map(line => line.trim())) : candidates;
+      const inboundPrefix = inboundDirectory ? `${inboundDirectory}${path.sep}` : '';
+      const mediaPaths = groupChatId && inboundPrefix
+        ? mediaLines.map(line => {
+          const start = line.indexOf(inboundPrefix);
+          return start < 0 ? line : inboundPrefix + (line.slice(start + inboundPrefix.length).split(/\s/u)[0] ?? '');
+        }) : mediaLines;
+      const imagePath = !command && inboundDirectory
+        ? mediaPaths.find(candidate => path.dirname(candidate) === inboundDirectory
           && /^(?:[\p{L}\p{N}._-]+---)?[\da-f-]{36}\.(?:png|jpe?g)$/iu.test(path.basename(candidate)))
         : undefined;
       const imageFile = imagePath ? path.basename(imagePath) : undefined;
-      const imageUnavailable = !command && !imageFile && event.isGroup === false
-        && [content, event.body?.trim()].some(value => value && /^!\[image\]\(img_[\w-]+\)$/u.test(value))
+      const imageUnavailable = !command && !imageFile
+        && mediaLines.some(value => /^!\[image\]\(img_[\w-]+\)$/u.test(value))
         ? true : undefined;
       if (!command && !imageFile && !imageUnavailable) return;
       const senderId = (context.senderId || event.senderId)?.replace(/^feishu:/, '');
       const messageId = context.messageId || event.messageId;
-      if (event.isGroup !== false || !senderId || !context.accountId || !messageId || !context.conversationId) {
+      if (!senderId || !context.accountId || !messageId || !context.conversationId) {
         return { handled: true, text: 'WEFTORY: unauthorized conversation / 会话未授权' };
       }
-      const text = await bridge({ command, imageFile, imageUnavailable, senderId, messageId,
+      const text = await bridge({ command, imageFile, imageUnavailable, groupChatId, senderId, messageId,
         accountId: context.accountId, conversationId: context.conversationId });
       if (typeof text === 'string') return text || command ? { handled: true, text } : undefined;
       return { handled: true, text: 'WEFTORY: desktop unavailable / 桌面应用不可用' };

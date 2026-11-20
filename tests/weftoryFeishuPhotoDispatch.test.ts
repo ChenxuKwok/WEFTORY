@@ -63,3 +63,25 @@ test('routes Feishu card form values through the authenticated bridge', async ()
     }) }),
   );
 });
+
+test('routes a group command and rich-text photo to the original Feishu chat', async () => {
+  vi.stubEnv('OPENCLAW_STATE_DIR', '/tmp/weftory');
+  const on = vi.fn();
+  plugin.register({
+    on,
+    pluginConfig: { callbackUrl: 'http://127.0.0.1:12345/weftory-command', secret: 'fixture' },
+  } as unknown as Parameters<typeof plugin.register>[0]);
+  const handler = on.mock.calls[0][1];
+  const send = vi.fn(async () => Response.json({ text: 'Queued' }));
+  vi.stubGlobal('fetch', send);
+  const context = { channelId: 'feishu', accountId: 'account', conversationId: 'chat:oc_coats',
+    senderId: 'ou_owner', messageId: 'om_group_photo' };
+  const imageFile = 'coat---e6d93ecc-8808-4de8-b545-d3bdab2d5196.jpg';
+  await handler({ content: '制作视频', isGroup: true }, context);
+  await handler({ content: `服装图 /tmp/weftory/media/inbound/${imageFile}`, isGroup: true }, context);
+  const payloads = (send.mock.calls as unknown as Array<[string, RequestInit]>).map(([, init]) => JSON.parse(String(init.body)));
+  expect(payloads).toMatchObject([
+    { groupChatId: 'oc_coats', command: '/wft video', senderId: 'ou_owner' },
+    { groupChatId: 'oc_coats', imageFile, senderId: 'ou_owner' },
+  ]);
+});
