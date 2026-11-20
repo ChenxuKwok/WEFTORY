@@ -23,6 +23,7 @@ import { ASK_USER_QUESTION_TOOL_NAME, COWORK_TEMP_DIR_NAME } from '../../shared/
 import { CoworkErrorModelSource } from '../../shared/cowork/errorDetail';
 import { OpenClawQuestion } from '../../shared/cowork/openclawQuestion';
 import { DECISION_MODEL_PLUGIN_ID } from '../../shared/decisionModel/constants';
+import { FashionBridgeRoute, FashionPluginId } from '../../shared/fashion/constants';
 import { WeixinPlugin } from '../../shared/im/weixin';
 import { normalizeMcpServerUrlInput } from '../../shared/mcp/url';
 import { MediaConfirmationPolicy } from '../../shared/media/confirmation';
@@ -2655,6 +2656,7 @@ export class OpenClawConfigSync {
     const hasPreinstalledPlugin = (...ids: string[]) => (
       preinstalledPlugins.some((plugin) => pluginMatches(plugin, ...ids))
     );
+    const hasFashionPlugin = process.platform === 'darwin' && process.arch === 'arm64' && isBundledPluginAvailable(FashionPluginId);
     const hasAskUserPlugin = isBundledPluginAvailable('ask-user-question');
     const hasMediaGenPlugin = isBundledPluginAvailable('lobster-media-generation');
     const hasModelRoutingPlugin = isBundledPluginAvailable('lobster-model-routing');
@@ -2892,6 +2894,7 @@ export class OpenClawConfigSync {
         const transientPluginIds = [
           ...(hasPreinstalledPlugin('openclaw-lark') ? ['feishu'] : []),
           OPENCLAW_MODEL_COMPAT_PLUGIN_ID,
+          FashionPluginId,
         ];
         const cleanedExistingEntries = Object.fromEntries(
           Object.entries(existingPluginEntries).filter(([id]) => (
@@ -2993,7 +2996,7 @@ export class OpenClawConfigSync {
         const existingAllow = Array.isArray((existingPlugins as Record<string, unknown>).allow)
           ? ((existingPlugins as Record<string, unknown>).allow as unknown[])
               .filter((id): id is string => typeof id === 'string' && id.length > 0)
-              .filter(id => id !== OPENCLAW_MODEL_COMPAT_PLUGIN_ID && id !== BUNDLED_XAI_PLUGIN_ID)
+              .filter(id => id !== OPENCLAW_MODEL_COMPAT_PLUGIN_ID && id !== BUNDLED_XAI_PLUGIN_ID && id !== FashionPluginId)
           : [];
         const trustedPluginAllow = Array.from(new Set([
           ...existingAllow,
@@ -3006,6 +3009,7 @@ export class OpenClawConfigSync {
           ...(xaiPluginEnabled ? [BUNDLED_XAI_PLUGIN_ID] : []),
           ...(hasMemoryEmbeddingPlugin && memoryEmbeddingPluginId ? [memoryEmbeddingPluginId] : []),
           ...(hasModelRoutingPlugin ? ['lobster-model-routing'] : []),
+          ...(hasFashionPlugin ? [FashionPluginId] : []),
           ...(hasModelCompatConfig
             ? [OPENCLAW_MODEL_COMPAT_PLUGIN_ID]
             : []),
@@ -3060,6 +3064,18 @@ export class OpenClawConfigSync {
         enabled: true,
         config: {
           callbackUrl: askUserCallbackUrl,
+          secret: '${LOBSTER_MCP_BRIDGE_SECRET}',
+        },
+      };
+    }
+
+    if (hasFashionPlugin && askUserCallbackUrl && managedConfig.plugins) {
+      const plugins = managedConfig.plugins as { entries: Record<string, unknown> };
+      plugins.entries[FashionPluginId] = {
+        enabled: true,
+        hooks: { allowConversationAccess: true },
+        config: {
+          callbackUrl: new URL(FashionBridgeRoute, askUserCallbackUrl).href,
           secret: '${LOBSTER_MCP_BRIDGE_SECRET}',
         },
       };

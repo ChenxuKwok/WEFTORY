@@ -124,7 +124,12 @@ function verifyPreinstalledPlugins(runtimeRoot, buildHint) {
     if (!plugin.id) continue;
     const pluginDir = resolvePreinstalledPluginDir(runtimeRoot, plugin);
     if (!existsSync(pluginDir)) {
-      missing.push(plugin.id);
+      // The Feishu-focused WEFTORY installer can omit channels marked optional in the pinned manifest.
+      if (process.env.WEFTORY_MEDIA_DIR && plugin.optional === true) {
+        console.warn(`[electron-builder-hooks] Optional plugin omitted from WEFTORY: ${plugin.id}`);
+      } else {
+        missing.push(plugin.id);
+      }
     } else {
       verifyRuntimeBundledPlugin(runtimeRoot, plugin);
     }
@@ -223,6 +228,7 @@ function precompileLocalExtensions(runtimeRoot, buildHint) {
 
 function ensureBundledLocalExtensions(runtimeRoot, buildHint) {
   const requiredLocalExtensions = ['mcp-bridge', 'ask-user-question', 'lobster-media-generation', 'lobster-decision'];
+  if (process.env.WEFTORY_MEDIA_DIR) requiredLocalExtensions.push('weftory-fashion');
   const missingCompiledExtensions = requiredLocalExtensions.filter(
     (extensionId) => !hasCompiledLocalExtension(runtimeRoot, extensionId),
   );

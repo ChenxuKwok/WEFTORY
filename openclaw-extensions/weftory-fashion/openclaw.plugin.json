@@ -1,0 +1,13 @@
+{
+  "id": "weftory-fashion",
+  "name": "WEFTORY Feishu Commands",
+  "description": "Handles the WEFTORY production commands before model dispatch.",
+  "configSchema": {
+    "type": "object",
+    "additionalProperties": false,
+    "properties": {
+      "callbackUrl": { "type": "string" },
+      "secret": { "type": "string" }
+    }
+  }
+}

@@ -10,6 +10,7 @@ import crypto from 'crypto';
 import http from 'http';
 
 import { ASK_USER_QUESTION_TIMEOUT_MS } from '../../shared/cowork/constants';
+import { FashionBridgeRoute } from '../../shared/fashion/constants';
 import type {
   MediaConfirmationCommand, MediaConfirmationResponse, MediaConfirmationState, VideoConfirmationDetails,
 } from '../../shared/media/confirmation';
@@ -156,7 +157,7 @@ export class McpBridgeServer {
   /** Editor tool handlers by route, served at `/<route>/tool`. */
   private readonly editorTools = new Map<string, { editorName: string; handler: EditorToolHandler }>();
 
-  constructor(secret: string) {
+  constructor(secret: string, private readonly fashionCommand?: (input: unknown) => string) {
     this.secret = secret;
     // The secret persists across launches; never log any part of it.
     log('INFO', 'McpBridgeServer created');
@@ -364,6 +365,19 @@ export class McpBridgeServer {
       log('WARN', `Auth rejected for ${req.url}: header=${authHeader ? 'present-but-mismatch' : 'missing'}`);
       res.writeHead(401, { 'Content-Type': 'application/json' });
       res.end(JSON.stringify({ error: 'Unauthorized' }));
+      return;
+    }
+
+    if (req.url === FashionBridgeRoute && this.fashionCommand) {
+      try {
+        const body = await this.readBody(req, 8192);
+        const text = this.fashionCommand(JSON.parse(body) as unknown);
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ text }));
+      } catch {
+        res.writeHead(400);
+        res.end();
+      }
       return;
     }
 
@@ -683,10 +697,18 @@ export class McpBridgeServer {
     }
   }
 
-  private readBody(req: http.IncomingMessage): Promise<string> {
+  private readBody(req: http.IncomingMessage, limit = Infinity): Promise<string> {
     return new Promise((resolve, reject) => {
       const chunks: Buffer[] = [];
-      req.on('data', (chunk: Buffer) => chunks.push(chunk));
+      let size = 0;
+      req.on('data', (chunk: Buffer) => {
+        size += chunk.length;
+        if (size > limit) {
+          reject(new Error('Request body too large'));
+          return;
+        }
+        chunks.push(chunk);
+      });
       req.on('end', () => resolve(Buffer.concat(chunks).toString('utf8')));
       req.on('error', reject);
     });

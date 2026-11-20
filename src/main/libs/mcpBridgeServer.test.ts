@@ -1,5 +1,6 @@
 import { describe, expect, test, vi } from 'vitest';
 
+import { FashionBridgeRoute } from '../../shared/fashion/constants';
 import { type AskUserRequest, type DecisionToolRequest, McpBridgeServer } from './mcpBridgeServer';
 
 const makeQuestions = (): AskUserRequest['questions'] => [{
@@ -291,6 +292,30 @@ describe('McpBridgeServer decision tool', () => {
       await pending;
 
       await vi.waitFor(() => expect(handlerSignal?.aborted).toBe(true));
+    } finally {
+      await server.stop();
+    }
+  });
+});
+
+describe('WEFTORY command bridge', () => {
+  test('authenticates the sender and rejects oversized payloads before dispatch', async () => {
+    const dispatch = vi.fn(() => 'queued');
+    const server = new McpBridgeServer('test-secret', dispatch);
+    try {
+      await server.start();
+      const url = new URL(FashionBridgeRoute, server.askUserCallbackUrl!);
+      const send = (secret: string, body: string) => fetch(url, {
+        method: 'POST', headers: { 'x-mcp-bridge-secret': secret }, body,
+      });
+      expect((await send('wrong', '{}')).status).toBe(401);
+      expect((await send('test-secret', ' '.repeat(8200))).status).toBe(400);
+      expect(dispatch).not.toHaveBeenCalled();
+      const event = { accountId: 'bot-1', senderId: 'ou_test', messageId: 'om_1',
+        conversationId: 'ou_test', command: '/wft pending' };
+      const response = await send('test-secret', JSON.stringify(event));
+      await expect(response.json()).resolves.toEqual({ text: 'queued' });
+      expect(dispatch).toHaveBeenCalledExactlyOnceWith(event);
     } finally {
       await server.stop();
     }

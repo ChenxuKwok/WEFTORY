@@ -7,6 +7,7 @@ import artifactReducer from './slices/artifactSlice';
 import asrQuotaReducer from './slices/asrQuotaSlice';
 import authReducer from './slices/authSlice';
 import coworkReducer from './slices/coworkSlice';
+import fashionReducer from './slices/fashionSlice';
 import imageEditorReducer from './slices/imageEditorSlice';
 import imReducer from './slices/imSlice';
 import kitReducer from './slices/kitSlice';
@@ -20,6 +21,7 @@ export const store = configureStore({
   reducer: {
     model: modelReducer,
     cowork: coworkReducer,
+    fashion: fashionReducer,
     skill: skillReducer,
     mcp: mcpReducer,
     im: imReducer,

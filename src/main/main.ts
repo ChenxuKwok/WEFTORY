@@ -161,6 +161,7 @@ import {
   EnterpriseQuotaMessageMetadataKey,
 } from '../shared/enterpriseAccount/constants';
 import { resolveEnterpriseQuotaError } from '../shared/enterpriseAccount/quotaError';
+import { FashionIpc, FashionMediaScheme } from '../shared/fashion/constants';
 import {
   HtmlShareAccessMode,
   type HtmlShareAccessMode as HtmlShareAccessModeValue,
@@ -278,6 +279,12 @@ import {
   readEnterpriseApiErrorCode,
   resolveEnterpriseMembershipRevocationSource,
 } from './enterpriseAccount/membershipRevocation';
+import { FashionFeishu } from './fashion/feishu';
+import { registerFashionIpc } from './fashion/ipc';
+import { FashionMedia } from './fashion/media';
+import { FashionProviders } from './fashion/providers';
+import { FashionService } from './fashion/service';
+import { FashionStore } from './fashion/store';
 import { registerFeedbackIpc } from './feedback/feedbackIpc';
 import { getLanguage, setLanguage, t } from './i18n';
 import { IMGatewayConfig, IMGatewayManager } from './im';
@@ -752,6 +759,7 @@ protocol.registerSchemesAsPrivileged([
       stream: true,
     },
   },
+  { scheme: FashionMediaScheme, privileges: { standard: true, secure: true, stream: true } },
   SKIN_PRIVILEGED_SCHEME,
 ]);
 
@@ -2281,6 +2289,8 @@ let appUpdateCoordinator: AppUpdateCoordinator | null = null;
 let resolveAppUpdateGraySession: () => AppUpdateGraySession | null = () => null;
 let mainLogReporter: MainLogReporter | null = null;
 let libraryIndexService: LibraryIndexService | null = null;
+let fashionService: FashionService | null = null;
+let fashionFeishu: FashionFeishu | null = null;
 let unsubscribeLibrarySessionChanges: (() => void) | null = null;
 
 function setPreventSleepBlockerEnabled(enabled: boolean): void {
@@ -4378,6 +4388,7 @@ const getMcpRuntime = (): McpRuntime => {
       bridgeSecret: getOpenClawLoopbackState().mcpBridgeSecret,
       getBridgePreferredPort: () => getOpenClawLoopbackState().getPreferredPort(OpenClawLoopbackService.McpBridge),
       onBridgePortBound: port => getOpenClawLoopbackState().rememberPort(OpenClawLoopbackService.McpBridge, port),
+      onFashionCommand: input => fashionFeishu?.handle(input) ?? t('fashionBotDenied'),
       onAskUserRequested: (sessionId, request) => {
         getDesktopNotificationManager().handlePermissionRequest(sessionId, request);
       },
@@ -15368,11 +15379,11 @@ if (!gotTheLock) {
           ? `script-src 'self'${wordWasmSource} 'unsafe-inline' http://localhost:${devPort} ws://localhost:${devPort}`
           : `script-src 'self'${wordWasmSource}`,
         "style-src 'self' 'unsafe-inline' https:",
-        `img-src 'self' data: blob: https: http: ${ArtifactPreviewProtocol.LocalFile}: ${SKIN_PRIVILEGED_SCHEME.scheme}:`,
+        `img-src 'self' data: blob: https: http: ${ArtifactPreviewProtocol.LocalFile}: ${SKIN_PRIVILEGED_SCHEME.scheme}: ${FashionMediaScheme}:`,
         // 允许连接到所有域名，不做限制
         'connect-src *',
         "font-src 'self' data: blob: https:",
-        `media-src 'self' data: blob: file: https: http: ${ArtifactPreviewProtocol.LocalFile}:`,
+        `media-src 'self' data: blob: file: https: http: ${ArtifactPreviewProtocol.LocalFile}: ${FashionMediaScheme}:`,
         "worker-src 'self' blob:",
         "frame-src 'self' file: http://127.0.0.1:*",
       ];
@@ -16054,6 +16065,7 @@ if (!gotTheLock) {
     unsubscribeLibrarySessionChanges = null;
     libraryIndexService?.stop();
     libraryThumbnailRenderer.dispose();
+    await Promise.all([fashionService?.stop(), fashionFeishu?.stop()]);
 
     // Close the SQLite database to flush the WAL and release the file lock.
     try {
@@ -16236,6 +16248,27 @@ if (!gotTheLock) {
     store = await initStore();
     profiler.measure('initStore');
     console.log('[Main] initApp: store initialized');
+    if (isMac && process.arch === 'arm64') {
+      const fashionStore = new FashionStore(store.getDatabase());
+      const fashionMedia = new FashionMedia(fashionStore, path.join(app.getPath('userData'), 'weftory'),
+        app.isPackaged ? path.join(process.resourcesPath, 'weftory-media') : undefined);
+      const arkKey = () => {
+        const encrypted = fashionStore.getSecret();
+        if (!encrypted || !safeStorage.isEncryptionAvailable()) return '';
+        try { return safeStorage.decryptString(encrypted); } catch { return ''; }
+      };
+      const fashionProviders = new FashionProviders(fashionMedia, arkKey, () => getOpenClawLoopbackState().proxyToken,
+        (presetId, signal) => modelPresetClient.resolve(crypto.randomUUID(), presetId, false, signal));
+      fashionService = new FashionService(fashionStore, fashionMedia, fashionProviders, run => {
+        fashionFeishu?.changed(run);
+        if (mainWindow && !mainWindow.isDestroyed()) {
+          mainWindow.webContents.send(FashionIpc.Changed, { id: run.id, version: run.version });
+        }
+      }, () => Boolean(arkKey()));
+      fashionFeishu = new FashionFeishu(fashionService, () => getIMGatewayManager().getIMStore().getFeishuInstances());
+      registerFashionIpc(fashionService, fashionFeishu, () => mainWindow,
+        isDev ? new URL(DEV_SERVER_URL).href : pathToFileURL(path.join(__dirname, '../dist/index.html')).href);
+    }
     const libraryLocalStore = new LibraryLocalStore(store.getDatabase());
     const emitLibraryChanged = (payload: LibraryChangedPayload): void => {
       for (const window of BrowserWindow.getAllWindows()) {
@@ -16681,6 +16714,8 @@ if (!gotTheLock) {
       console.error('[OpenClaw] Startup config sync failed:', startupSync.error);
     }
     profiler.measure('syncOpenClawConfig');
+    fashionFeishu?.recover();
+    fashionService?.start();
     void ensureOpenClawRunningForCowork()
       .then(() => {
         // Start cron polling once the gateway is confirmed running.

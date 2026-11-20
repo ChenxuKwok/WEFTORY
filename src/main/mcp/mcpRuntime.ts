@@ -90,6 +90,7 @@ export interface McpRuntimeDeps {
   /** Callback-server port from the previous launch. */
   getBridgePreferredPort?: () => number | undefined;
   onBridgePortBound?: (port: number) => void;
+  onFashionCommand?: (input: unknown) => string;
 }
 
 export class McpRuntime {
@@ -219,7 +220,7 @@ export class McpRuntime {
     if (this.bridgeServer?.port) return;
 
     if (!this.bridgeServer) {
-      this.bridgeServer = new McpBridgeServer(this.bridgeSecret);
+      this.bridgeServer = new McpBridgeServer(this.bridgeSecret, this.deps.onFashionCommand);
     }
     console.log('[AskUser] starting HTTP callback server...');
     const port = await this.bridgeServer.start(this.deps.getBridgePreferredPort?.());

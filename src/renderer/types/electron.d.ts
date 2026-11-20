@@ -96,6 +96,7 @@ import type {
   EnterpriseAccountIdentitiesResult,
   EnterpriseQuotaRequestResult,
 } from '../../shared/enterpriseAccount/types';
+import type { FashionApi } from '../../shared/fashion/contracts';
 import type { FeedbackBridge } from '../../shared/feedback/constants';
 import type {
   HtmlShareAccessMode,
@@ -1617,6 +1618,7 @@ interface IElectronAPI {
     ) => Promise<SiteResult<SiteQuotaReservation>>;
     releaseQuotaReservation: (reservationId: string) => Promise<SiteResult<null>>;
   };
+  fashion?: FashionApi;
   library: {
     listLocal: (
       options?: LibraryLocalListOptions,

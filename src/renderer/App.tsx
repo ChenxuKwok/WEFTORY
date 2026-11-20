@@ -44,6 +44,7 @@ import CoworkQuestionWizard from './components/cowork/CoworkQuestionWizard';
 import EngineFailureOverlay from './components/cowork/EngineFailureOverlay';
 import EngineStartupOverlay from './components/cowork/EngineStartupOverlay';
 import ExpertPlazaView from './components/experts/ExpertPlazaView';
+import FashionHome from './components/fashion/FashionHome';
 import FeedbackDialog from './components/feedback/FeedbackDialog';
 import LaunchAdModal from './components/LaunchAdModal';
 import LibraryView from './components/library/LibraryView';
@@ -754,6 +755,7 @@ const App: React.FC = () => {
       const target = (event as CustomEvent<AppDeepLinkTarget>).detail;
       if (!target) return;
       if (target.kind === 'view' && target.view === MainView.Experts && !ENABLE_EXPERT_PLAZA_UI) return;
+      if (target.kind === 'view' && target.view === MainView.Fashion && !window.electron.fashion) return;
       // The page opens underneath the startup screen, which says where the user is headed.
       if (isEngineStartupOverlayVisible) {
         setStartupDestination(pending => ({ target, previousView: pending?.previousView ?? mainView }));
@@ -1920,6 +1922,7 @@ const App: React.FC = () => {
           onShowConnectors={handleShowMcp}
           onShowExperts={handleShowExperts}
           onShowLibrary={handleShowLibrary}
+          onShowFashion={window.electron.fashion ? () => setMainView(MainView.Fashion) : undefined}
           onNewChat={handleNewChat}
           isCollapsed={isSidebarCollapsed}
           onToggleCollapse={handleToggleSidebar}
@@ -1981,6 +1984,8 @@ const App: React.FC = () => {
                 updateBadge={collapsedHeaderUpdateBadge}
                 onSummon={handleExpertSummon}
               />
+            ) : mainView === MainView.Fashion && window.electron.fashion ? (
+              <FashionHome api={window.electron.fashion} />
             ) : mainView === MainView.Library ? (
               <LibraryView
                 isAuthenticated={Boolean(authUser)}

@@ -108,6 +108,16 @@ for (const platformName of ['mac', 'win', 'linux']) {
   mergeExtraResources(platformName);
 }
 
+if (process.env.WEFTORY_MEDIA_DIR) {
+  const { validateWeftoryMediaDirectory } = require('./weftory-media-resources.cjs');
+  validateWeftoryMediaDirectory(process.env.WEFTORY_MEDIA_DIR);
+  config.mac.extraResources.push({
+    from: process.env.WEFTORY_MEDIA_DIR,
+    to: 'weftory-media',
+    filter: ['ffmpeg', 'ffprobe', 'THIRD-PARTY-NOTICES.txt', 'licenses/**/*'],
+  });
+}
+
 // Resolve explicit signing options consistently for direct and codown builds.
 configureMacWebAuthnEntitlements(config, packagingEnv(path.join(__dirname, '..')));
 
@@ -125,7 +135,9 @@ delete config.extraResources;
 
 config.dmg = {
   ...(config.dmg || {}),
-  artifactName: `LobsterAI-darwin-\${arch}-\${version}-${keyfrom}.\${ext}`,
+  artifactName: process.env.WEFTORY_MEDIA_DIR
+    ? 'WEFTORY-${version}-${arch}.${ext}'
+    : `LobsterAI-darwin-\${arch}-\${version}-${keyfrom}.\${ext}`,
 };
 
 config.nsis = {

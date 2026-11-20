@@ -1,5 +1,6 @@
 import { messageEditTranslations } from '../../shared/cowork/messageEdit';
 import { desktopCompanionTranslations } from '../../shared/desktopCompanion/copy';
+import { fashionCopy } from '../../shared/fashion/copy';
 import { imageCreationTranslations } from '../../shared/imageCreation/copy';
 import { imageEditingTranslations } from '../../shared/imageEditing/copy';
 import { mediaTranslations } from '../../shared/media/copy';
@@ -12,6 +13,7 @@ export type LanguageType = 'zh' | 'en';
 // 语言文本映射
 const translations: Record<LanguageType, Record<string, string>> = {
   zh: {
+    ...fashionCopy.zh,
     ...messageEditTranslations.zh,
     modelPresetBalanced: '快速',
     modelPresetUltimate: '旗舰',
@@ -4812,6 +4814,7 @@ const translations: Record<LanguageType, Record<string, string>> = {
     workspaceDiffIncomplete: '部分文件超出读取限额，行数统计不完整。',
   },
   en: {
+    ...fashionCopy.en,
     ...messageEditTranslations.en,
     modelPresetBalanced: 'Fast',
     modelPresetUltimate: 'Flagship',

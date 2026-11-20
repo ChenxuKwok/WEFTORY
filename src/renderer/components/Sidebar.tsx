@@ -59,6 +59,7 @@ interface SidebarProps {
   onShowConnectors: () => void;
   onShowExperts: () => void;
   onShowLibrary: () => void;
+  onShowFashion?: () => void;
   onNewChat: () => void;
   isCollapsed: boolean;
   onToggleCollapse: () => void;
@@ -188,6 +189,7 @@ const Sidebar: React.FC<SidebarProps> = ({
   onShowConnectors,
   onShowExperts,
   onShowLibrary,
+  onShowFashion,
   onNewChat,
   isCollapsed,
   onToggleCollapse,
@@ -762,6 +764,20 @@ const Sidebar: React.FC<SidebarProps> = ({
             <SidebarLibraryIcon className={sidebarNavIconClassName} />
             <span className="min-w-0 truncate">{i18nService.t('librarySidebarTitle')}</span>
           </button>
+          {onShowFashion && (
+            <button
+              type="button"
+              onClick={() => {
+                setIsSearchOpen(false);
+                onShowFashion();
+              }}
+              className={activeView === MainView.Fashion ? activeSidebarNavItemClassName : sidebarNavItemClassName}
+              aria-current={activeView === MainView.Fashion ? 'page' : undefined}
+            >
+              <SidebarLibraryIcon className={sidebarNavIconClassName} />
+              <span className="min-w-0 truncate">{i18nService.t('fashionName')}</span>
+            </button>
+          )}
         </div>
       </div>
       <div className="relative min-h-0 flex-1">

@@ -14,6 +14,7 @@
 
 import { messageEditTranslations } from '../shared/cowork/messageEdit';
 import { desktopCompanionTranslations } from '../shared/desktopCompanion/copy';
+import { fashionCopy } from '../shared/fashion/copy';
 import { imageEditingTranslations } from '../shared/imageEditing/copy';
 import { mediaTranslations } from '../shared/media/copy';
 import { modelContextWindowTranslations } from '../shared/providers/contextWindowCopy';
@@ -22,6 +23,7 @@ export type LanguageType = 'zh' | 'en';
 
 const translations: Record<LanguageType, Record<string, string>> = {
   zh: {
+    ...fashionCopy.zh,
     ...messageEditTranslations.zh,
     modelPresetBalanced: '快速',
     modelPresetUltimate: '旗舰',
@@ -448,6 +450,7 @@ const translations: Record<LanguageType, Record<string, string>> = {
     'enterprise.updateBlocked': '版本更新由企业统一管理',
   },
   en: {
+    ...fashionCopy.en,
     ...messageEditTranslations.en,
     modelPresetBalanced: 'Fast',
     modelPresetUltimate: 'Flagship',

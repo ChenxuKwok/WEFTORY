@@ -86,6 +86,8 @@ import {
   EnterpriseAccountIpcChannel,
   type EnterpriseQuotaRequestType,
 } from '../shared/enterpriseAccount/constants';
+import { FashionIpc } from '../shared/fashion/constants';
+import type { FashionApi } from '../shared/fashion/contracts';
 import { type FeedbackInput,FeedbackIpc } from '../shared/feedback/constants';
 import {
   type HtmlShareAccessMode,
@@ -1157,6 +1159,27 @@ contextBridge.exposeInMainWorld('electron', {
     releaseQuotaReservation: (reservationId: string) =>
       ipcRenderer.invoke(SiteIpc.ReleaseQuotaReservation, reservationId),
   },
+  fashion: process.platform === 'darwin' && process.arch === 'arm64' ? {
+    snapshot: () => ipcRenderer.invoke(FashionIpc.Snapshot),
+    importImage: () => ipcRenderer.invoke(FashionIpc.Import),
+    saveProduct: input => ipcRenderer.invoke(FashionIpc.SaveProduct, input),
+    saveCharacter: input => ipcRenderer.invoke(FashionIpc.SaveCharacter, input),
+    saveSettings: input => ipcRenderer.invoke(FashionIpc.SaveSettings, input),
+    testSetup: () => ipcRenderer.invoke(FashionIpc.TestSetup),
+    create: input => ipcRenderer.invoke(FashionIpc.Create, input),
+    savePlan: input => ipcRenderer.invoke(FashionIpc.SavePlan, input),
+    approvePlan: input => ipcRenderer.invoke(FashionIpc.ApprovePlan, input),
+    review: input => ipcRenderer.invoke(FashionIpc.Review, input),
+    rework: input => ipcRenderer.invoke(FashionIpc.Rework, input),
+    retry: input => ipcRenderer.invoke(FashionIpc.Retry, input),
+    cancel: id => ipcRenderer.invoke(FashionIpc.Cancel, id),
+    exportRun: input => ipcRenderer.invoke(FashionIpc.Export, input),
+    onChanged: callback => {
+      const handler = (_event: Electron.IpcRendererEvent, update: { id: string; version: number }) => callback(update);
+      ipcRenderer.on(FashionIpc.Changed, handler);
+      return () => ipcRenderer.removeListener(FashionIpc.Changed, handler);
+    },
+  } satisfies FashionApi : undefined,
   library: {
     listLocal: (options: LibraryLocalListOptions = {}) =>
       ipcRenderer.invoke(LibraryIpc.ListLocal, options),

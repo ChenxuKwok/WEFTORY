@@ -162,6 +162,7 @@
     "dist": "npm run setup:python-runtime && npm run build && npm run compile:electron && npm run build:skills && electron-builder --config scripts/electron-builder-config.cjs",
     "dist:mac": "electron-builder --mac --config scripts/electron-builder-config.cjs",
     "predist:mac": "npm run build && npm run compile:electron && npm run build:skills && npm run openclaw:runtime:mac-arm64",
+    "dist:weftory:mac": "node scripts/weftory-media-resources.cjs && npm install --prefix SKILLs/pptx --package-lock-only --ignore-scripts --no-audit --no-fund && npm run dist:mac:arm64",
     "dist:mac:x64": "npm run build && npm run compile:electron && npm run build:skills && npm run openclaw:runtime:mac-x64 && electron-builder --mac --x64 --config scripts/electron-builder-config.cjs",
     "dist:mac:arm64": "npm run build && npm run compile:electron && npm run build:skills && npm run openclaw:runtime:mac-arm64 && electron-builder --mac --arm64 --config scripts/electron-builder-config.cjs",
     "dist:mac:universal": "npm run build && npm run compile:electron && npm run build:skills && electron-builder --mac --universal --config scripts/electron-builder-config.cjs",

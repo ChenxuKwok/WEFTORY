@@ -52,6 +52,7 @@ const MAIN_VIEW_LABEL_KEYS: Record<MainView, string> = {
   [MainView.Connectors]: 'connectors',
   [MainView.ScheduledTasks]: 'scheduledTasks',
   [MainView.Library]: 'librarySidebarTitle',
+  [MainView.Fashion]: 'fashionName',
 };
 
 /**

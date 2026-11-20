@@ -6,5 +6,6 @@ export const MainView = {
   Connectors: 'mcp',
   ScheduledTasks: 'scheduledTasks',
   Library: 'library',
+  Fashion: 'fashion',
 } as const;
 export type MainView = typeof MainView[keyof typeof MainView];
