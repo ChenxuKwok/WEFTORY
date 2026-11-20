@@ -25,6 +25,25 @@
       html.dark .splash {
         background: #1a1d27;
       }
+      html.fashion-studio .splash {
+        background: #f7f6f3;
+      }
+      html.fashion-studio.dark .splash {
+        background: #151417;
+      }
+      html.fashion-studio .splash-gradient,
+      html.fashion-studio .splash-logo-glow,
+      html.fashion-studio .splash-bar,
+      html.fashion-studio .splash-bar-below,
+      html.fashion-studio .splash-tips {
+        display: none;
+      }
+      html.fashion-studio .splash-logo {
+        box-shadow: none;
+      }
+      html.fashion-studio .splash-title {
+        letter-spacing: 0.16em;
+      }
       .splash-gradient {
         position: absolute;
         inset: 0;
@@ -234,6 +253,7 @@
         </div>
       </div>
     </div>
+    <script src="/weftory-splash.js"></script>
     <script>
       // 本地化启动屏文案并随机选一条小提示。
       // 'lobster-language' 由 i18n.ts 在语言确定后写入；首次启动回退到系统语言。
@@ -244,6 +264,7 @@
           if (lang !== 'zh' && lang !== 'en') {
             lang = navigator.language === 'zh-CN' ? 'zh' : 'en';
           }
+          if (window.electron && window.electron.fashion) return;
           var texts = {
             zh: {
               title: 'AI 引擎启动中',

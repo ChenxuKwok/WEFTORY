@@ -369,11 +369,11 @@ function translateIMError(error: string | null): string {
   return error;
 }
 
-const IMSettings: React.FC = () => {
+const IMSettings: React.FC<{ onlyPlatform?: Platform }> = ({ onlyPlatform }) => {
   const dispatch = useDispatch();
   const { config, status, isLoading } = useSelector((state: RootState) => state.im);
   const agents = useSelector((state: RootState) => state.agent.agents);
-  const [activePlatform, setActivePlatform] = useState<Platform>('weixin');
+  const [activePlatform, setActivePlatform] = useState<Platform>(onlyPlatform ?? 'weixin');
   const [activeQQInstanceId, setActiveQQInstanceId] = useState<string | null>(null);
   const [activeFeishuInstanceId, setActiveFeishuInstanceId] = useState<string | null>(null);
   const [activeDingTalkInstanceId, setActiveDingTalkInstanceId] = useState<string | null>(null);
@@ -1000,8 +1000,8 @@ const IMSettings: React.FC = () => {
 
   // Compute visible platforms based on language
   const platforms = useMemo<Platform[]>(() => {
-    return getVisibleIMPlatforms(language) as Platform[];
-  }, [language]);
+    return onlyPlatform ? [onlyPlatform] : getVisibleIMPlatforms(language) as Platform[];
+  }, [language, onlyPlatform]);
 
   // Ensure activePlatform is always in visible platforms when language changes
   useEffect(() => {
@@ -2008,7 +2008,7 @@ const IMSettings: React.FC = () => {
   return (
     <div className="flex h-full gap-3">
       {/* Platform List - Left Side */}
-      <nav className="flex w-44 flex-shrink-0 flex-col gap-0.5 overflow-y-auto border-r border-border pr-3">
+      {!onlyPlatform && <nav className="flex w-44 flex-shrink-0 flex-col gap-0.5 overflow-y-auto border-r border-border pr-3">
         {platforms.map((platform) => {
           const logo = PlatformRegistry.logo(platform);
           const isActive = activePlatform === platform;
@@ -2046,7 +2046,7 @@ const IMSettings: React.FC = () => {
             </button>
           );
         })}
-      </nav>
+      </nav>}
 
       {/* Platform Settings - Right Side */}
       <div className="min-w-0 flex-1 space-y-4 overflow-y-auto pl-3 pr-4 [scrollbar-gutter:stable]">

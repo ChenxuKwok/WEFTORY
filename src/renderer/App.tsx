@@ -44,7 +44,6 @@ import CoworkQuestionWizard from './components/cowork/CoworkQuestionWizard';
 import EngineFailureOverlay from './components/cowork/EngineFailureOverlay';
 import EngineStartupOverlay from './components/cowork/EngineStartupOverlay';
 import ExpertPlazaView from './components/experts/ExpertPlazaView';
-import FashionHome from './components/fashion/FashionHome';
 import FeedbackDialog from './components/feedback/FeedbackDialog';
 import LaunchAdModal from './components/LaunchAdModal';
 import LibraryView from './components/library/LibraryView';
@@ -1922,7 +1921,6 @@ const App: React.FC = () => {
           onShowConnectors={handleShowMcp}
           onShowExperts={handleShowExperts}
           onShowLibrary={handleShowLibrary}
-          onShowFashion={window.electron.fashion ? () => setMainView(MainView.Fashion) : undefined}
           onNewChat={handleNewChat}
           isCollapsed={isSidebarCollapsed}
           onToggleCollapse={handleToggleSidebar}
@@ -1984,8 +1982,6 @@ const App: React.FC = () => {
                 updateBadge={collapsedHeaderUpdateBadge}
                 onSummon={handleExpertSummon}
               />
-            ) : mainView === MainView.Fashion && window.electron.fashion ? (
-              <FashionHome api={window.electron.fashion} />
             ) : mainView === MainView.Library ? (
               <LibraryView
                 isAuthenticated={Boolean(authUser)}

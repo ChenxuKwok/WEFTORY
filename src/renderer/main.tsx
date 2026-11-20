@@ -6,6 +6,7 @@ import { Provider } from 'react-redux';
 
 import App from './App';
 import EngineRepairOverlay from './components/cowork/EngineRepairOverlay';
+import FashionApp from './components/fashion/FashionApp';
 import { store } from './store';
 
 const rootElement = document.getElementById('root');
@@ -17,8 +18,12 @@ try {
   ReactDOM.createRoot(rootElement).render(
     <React.StrictMode>
       <Provider store={store}>
-        <App />
-        <EngineRepairOverlay />
+        {window.electron?.fashion ? <FashionApp api={window.electron.fashion} /> : (
+          <>
+            <App />
+            <EngineRepairOverlay />
+          </>
+        )}
       </Provider>
     </React.StrictMode>
   );

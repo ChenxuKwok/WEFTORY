@@ -965,6 +965,7 @@ export type SettingsOpenOptions = {
 
 interface SettingsProps extends SettingsOpenOptions {
   onClose: () => void;
+  modelOnly?: boolean;
   onStartAiSkin?: (text: string, kitId: string) => void;
   initialTabRequestId?: number;
   onUpdateFound?: (info: AppUpdateInfo) => void;
@@ -1400,6 +1401,7 @@ const SettingsNumberInputRow: React.FC<{
 
 const Settings: React.FC<SettingsProps> = ({
   onClose,
+  modelOnly = false,
   onStartAiSkin,
   initialTab,
   initialTabRequestId,
@@ -1417,7 +1419,11 @@ const Settings: React.FC<SettingsProps> = ({
     selectThemeMode,
   } = useSkin();
   // 状态
-  const [activeTab, setActiveTab] = useState<TabType>(initialTab ?? 'general');
+  const [activeTab, setActiveTab] = useState<TabType>(modelOnly ? 'model' : initialTab ?? 'general');
+  const [productionModelKey, setProductionModelKey] = useState(() => {
+    const { defaultModel, defaultModelProvider } = configService.getConfig().model;
+    return JSON.stringify([defaultModelProvider, defaultModel]);
+  });
   const [feedbackOpen, setFeedbackOpen] = useState(false);
   const [theme, setTheme] = useState<'light' | 'dark' | 'system'>('system');
   const [themeId, setThemeId] = useState<string>(themeService.getDefaultThemeId());
@@ -1557,7 +1563,7 @@ const Settings: React.FC<SettingsProps> = ({
 
   // 快捷键设置
   const [shortcuts, setShortcuts] = useState<ShortcutConfig>(() => ({ ...defaultConfig.shortcuts! }));
-  const { state: companionState, error: companionLoadError } = useDesktopCompanionState();
+  const { state: companionState, error: companionLoadError } = useDesktopCompanionState(!modelOnly);
   const [quickPanelShortcutDraft, setQuickPanelShortcutDraft] = useState<string | null>(null);
   const shortcutBindings = useMemo(() => ({
     ...shortcuts,
@@ -2035,7 +2041,7 @@ const Settings: React.FC<SettingsProps> = ({
       setThemeId(defaultThemeId);
       setUiFontSize(resolvedUiFontSize);
       setCodeFontSize(resolvedCodeFontSize);
-      setLanguage(config.language);
+      setLanguage(modelOnly ? i18nService.getLanguage() : config.language);
       setArtifactAutoPreviewEnabled(
         resolveArtifactAutoPreviewEnabled(config.artifactAutoPreviewEnabled),
       );
@@ -2288,9 +2294,10 @@ const Settings: React.FC<SettingsProps> = ({
     } catch {
       setError('Failed to load settings');
     }
-  }, []);
+  }, [modelOnly]);
 
   useEffect(() => {
+    if (modelOnly) return;
     const initialUiFontSize = initialUiFontSizeRef.current;
     const initialCodeFontSize = initialCodeFontSizeRef.current;
     const initialLanguage = initialLanguageRef.current;
@@ -2304,7 +2311,7 @@ const Settings: React.FC<SettingsProps> = ({
       });
       i18nService.setLanguage(initialLanguage, { persist: false });
     };
-  }, []);
+  }, [modelOnly]);
 
   // 监听标签页切换，确保内容区域滚动到顶部
   useEffect(() => {
@@ -2345,10 +2352,10 @@ const Settings: React.FC<SettingsProps> = ({
   }, [buildNoticeMessage]);
 
   useEffect(() => {
-    if (initialTab) {
+    if (initialTab && !modelOnly) {
       setActiveTab(initialTab);
     }
-  }, [initialTab, initialTabRequestId]);
+  }, [initialTab, initialTabRequestId, modelOnly]);
 
   // Subscribe to language changes
   useEffect(() => {
@@ -3083,7 +3090,19 @@ const Settings: React.FC<SettingsProps> = ({
     }
   }, [openClawDataBackupResult?.path]);
 
-  const persistModelSettingsBeforeDataBackup = useCallback(async () => {
+  const productionModels = modelOnly ? Object.entries(providers).flatMap(([provider, config]) => (
+    config.enabled && hasProviderAuthConfigured(provider as ProviderType, config)
+      ? (config.models ?? []).filter(model => model.id.trim()).map(model => ({
+        key: JSON.stringify([provider, model.id]),
+        provider,
+        model,
+        label: `${getProviderDisplayName(provider, config)} · ${model.name || model.id}`,
+      }))
+      : []
+  )) : [];
+  const productionModel = productionModels.find(model => model.key === productionModelKey) ?? productionModels[0];
+
+  const persistModelSettings = useCallback(async (selection?: Pick<AppConfig['model'], 'defaultModel' | 'defaultModelProvider'>) => {
     const normalizedProviders = normalizeProvidersForSettingsSave(providers);
     const primaryProvider = resolvePrimaryProviderForSettingsSave(normalizedProviders, activeProvider);
     await configService.updateConfig({
@@ -3092,6 +3111,7 @@ const Settings: React.FC<SettingsProps> = ({
         baseUrl: primaryProvider.baseUrl,
       },
       providers: normalizedProviders,
+      ...(selection && { model: { ...configService.getConfig().model, ...selection } }),
     });
   }, [activeProvider, providers]);
 
@@ -3103,7 +3123,7 @@ const Settings: React.FC<SettingsProps> = ({
     setIsBackingUpOpenClawData(true);
     try {
       await waitForNextPaint();
-      await persistModelSettingsBeforeDataBackup();
+      await persistModelSettings();
       const result = await window.electron.openclaw.dataMigration.backup();
       if (!result.success) {
         setError(result.error || i18nService.t('openClawDataBackupFailed'));
@@ -3126,7 +3146,7 @@ const Settings: React.FC<SettingsProps> = ({
     } finally {
       setIsBackingUpOpenClawData(false);
     }
-  }, [isBackingUpOpenClawData, persistModelSettingsBeforeDataBackup]);
+  }, [isBackingUpOpenClawData, persistModelSettings]);
 
   const handleConfirmOpenClawDataRestore = useCallback(async () => {
     if (isRestoringOpenClawData) return;
@@ -3426,6 +3446,15 @@ const Settings: React.FC<SettingsProps> = ({
     setError(null);
 
     try {
+      if (modelOnly) {
+        await persistModelSettings(productionModel && {
+          defaultModel: productionModel.model.id,
+          defaultModelProvider: productionModel.provider,
+        });
+        didSaveRef.current = true;
+        onClose();
+        return;
+      }
       const normalizedProviders = normalizeProvidersForSettingsSave(providers);
       const primaryProvider = resolvePrimaryProviderForSettingsSave(normalizedProviders, activeProvider);
       const normalizedBrowserWebAccess = normalizeBrowserWebAccessConfig({
@@ -4413,6 +4442,7 @@ const Settings: React.FC<SettingsProps> = ({
       { key: 'help' as TabType,           label: i18nService.t('helpAndFeedback'), icon: <QuestionMarkCircleIcon className="h-5 w-5" /> },
       { key: 'about' as TabType,          label: i18nService.t('about'),          icon: <InformationCircleIcon className="h-5 w-5" /> },
     ];
+    if (modelOnly) return allTabs.filter(tab => tab.key === 'model');
     // Filter out tabs hidden by enterprise config
     // Filter out tabs with 'hide' action in enterprise config
     // e.g., ui: { "settings.im": "hide" } → hide the 'im' tab
@@ -5900,7 +5930,7 @@ const Settings: React.FC<SettingsProps> = ({
         onClick={handleSettingsClick}
       >
         {/* Left sidebar */}
-        <div className="w-[220px] shrink-0 flex flex-col bg-surface-raised border-r border-border rounded-l-2xl overflow-y-auto">
+        {!modelOnly && <div className="w-[220px] shrink-0 flex flex-col bg-surface-raised border-r border-border rounded-l-2xl overflow-y-auto">
           <div className="px-5 pt-5 pb-3">
             <h2 className={`${SETTINGS_PAGE_TITLE_TEXT} font-semibold text-foreground`}>{i18nService.t('settings')}</h2>
           </div>
@@ -5920,7 +5950,7 @@ const Settings: React.FC<SettingsProps> = ({
               </button>
             ))}
           </nav>
-        </div>
+        </div>}
 
         {/* Right content */}
         <div className="relative flex-1 flex flex-col min-w-0 overflow-hidden bg-background rounded-r-2xl">
@@ -5960,6 +5990,13 @@ const Settings: React.FC<SettingsProps> = ({
               className="px-6 py-4 flex-1 overflow-y-auto"
               style={{ scrollbarGutter: 'stable' }}
             >
+              {modelOnly && productionModel && <label className="mb-4 flex flex-wrap items-center justify-between gap-2 rounded-xl border border-border bg-surface px-4 py-3 text-sm font-medium text-foreground">
+                {i18nService.t('fashionTextModel')}
+                <select value={productionModel.key} onChange={event => setProductionModelKey(event.target.value)}
+                  className="min-w-0 max-w-full appearance-auto rounded-lg border border-border bg-background px-3 py-2 text-sm font-normal">
+                  {productionModels.map(option => <option key={option.key} value={option.key}>{option.label}</option>)}
+                </select>
+              </label>}
               {renderTabContent()}
             </div>
 

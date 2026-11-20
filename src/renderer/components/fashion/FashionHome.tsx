@@ -1,7 +1,8 @@
-import { type FormEvent, type ReactNode,useCallback, useEffect, useRef, useState } from 'react';
+import { ChevronDownIcon, PlayIcon, PlusIcon } from '@heroicons/react/24/outline';
+import { type FormEvent, type ReactNode, useCallback, useEffect, useRef, useState, useSyncExternalStore } from 'react';
 import { useDispatch, useSelector } from 'react-redux';
 
-import { Decision, FashionError, FashionMediaScheme, RunMode, RunState, ShotRole } from '../../../shared/fashion/constants';
+import { Decision, FashionError, FashionLogoFile, FashionMediaScheme, RunMode, RunState, ShotRole } from '../../../shared/fashion/constants';
 import type { Character, FashionApi, FashionResult, FashionSnapshot, Plan, Product, Run } from '../../../shared/fashion/contracts';
 import { i18nService } from '../../services/i18n';
 import type { RootState } from '../../store';
@@ -9,14 +10,20 @@ import { chooseFashionRun, receiveFashionSnapshot } from '../../store/slices/fas
 
 const t = (key: string, values?: Record<string, string>) => i18nService.t(key)
   .replace(/\{(\w+)\}/g, (placeholder, token: string) => values?.[token] ?? placeholder);
-const panel = 'rounded-2xl border border-slate-200 bg-white p-5 dark:border-slate-700 dark:bg-slate-900';
-const field = 'w-full rounded-lg border border-slate-200 bg-transparent px-3 py-2 text-sm focus-visible:outline-blue-500 dark:border-slate-700';
-const button = 'rounded-lg border border-slate-300 px-3 py-2 text-sm font-medium hover:bg-slate-100 disabled:opacity-40 dark:border-slate-600 dark:hover:bg-slate-800';
-const primary = 'rounded-lg bg-slate-900 px-4 py-2 text-sm font-semibold text-white hover:bg-slate-700 disabled:opacity-40 dark:bg-blue-600 dark:hover:bg-blue-500';
-const eyebrow = 'text-xs font-medium text-slate-500 dark:text-slate-400';
-const tabs = { Queue: 'fashionQueue', Assets: 'fashionAssets', Settings: 'fashionSettings' } as const;
-type Tab = typeof tabs[keyof typeof tabs];
+const panel = 'min-w-0 rounded-2xl border border-stone-200 bg-white p-5 dark:border-zinc-800 dark:bg-zinc-900';
+const field = 'min-w-0 w-full rounded-lg border border-stone-200 bg-transparent px-3 py-2 text-sm focus-visible:outline-violet-500 dark:border-zinc-700';
+const button = 'inline-flex items-center justify-center gap-2 rounded-lg border border-stone-200 px-3 py-2 text-sm font-medium hover:bg-stone-100 disabled:opacity-40 dark:border-zinc-700 dark:hover:bg-zinc-800';
+const primary = 'inline-flex items-center justify-center gap-2 rounded-lg bg-[#292333] px-4 py-2 text-sm font-semibold text-white hover:bg-[#40344d] disabled:opacity-40 dark:bg-violet-200 dark:text-zinc-950 dark:hover:bg-violet-100';
+const eyebrow = 'text-xs font-medium text-stone-600 dark:text-zinc-400';
+const disclosure = 'flex cursor-pointer list-none items-center justify-between gap-3 text-sm font-semibold [&::-webkit-details-marker]:hidden';
+const chevron = 'h-4 w-4 shrink-0 transition-transform group-open:rotate-180';
+const subscribeLanguage = (listener: () => void) => i18nService.subscribe(listener);
+const getLanguage = () => i18nService.getLanguage();
+const logoUrl = import.meta.env.BASE_URL + FashionLogoFile;
+export const FashionTab = { Queue: 'fashionQueue', Assets: 'fashionAssets', Settings: 'fashionSettings' } as const;
+export type FashionTab = typeof FashionTab[keyof typeof FashionTab];
 type Action = <T>(request: () => Promise<FashionResult<T>>) => Promise<T | undefined>;
+const runTitle = (run: Run) => run.mode === RunMode.Demo ? t('fashionDemoProduct') : run.product.title;
 const mediaUrl = (id: string) => `${FashionMediaScheme}://asset/${id}`;
 const money = (cents: number) => (cents / 100).toFixed(2);
 const formText = (data: FormData, name: string) => String(data.get(name) ?? '');
@@ -31,8 +38,19 @@ function Money({ name, label, value, required }: { name: string; label: string; 
     defaultValue={value === undefined ? undefined : money(value)} required={required} /></Field>;
 }
 
-export default function FashionHome({ api }: { api: FashionApi }) {
-  const [tab, setTab] = useState<Tab>(tabs.Queue);
+type ConfigurationActions = {
+  onConfigureText?: () => void;
+  onConfigureFeishu?: () => void;
+};
+
+export default function FashionHome({ api, tab, setTab, onConfigureText, onConfigureFeishu, configurationRevision }: ConfigurationActions & {
+  configurationRevision: number;
+  api: FashionApi;
+  tab: FashionTab;
+  setTab: (tab: FashionTab) => void;
+}) {
+  const language = useSyncExternalStore(subscribeLanguage, getLanguage);
+  const [isCreating, setIsCreating] = useState(false);
   const { snapshot, runId } = useSelector((state: RootState) => state.fashion);
   const dispatch = useDispatch();
   const [error, setError] = useState<FashionError>();
@@ -58,7 +76,7 @@ export default function FashionHome({ api }: { api: FashionApi }) {
       unsubscribe();
       window.removeEventListener('focus', update);
     };
-  }, [api, refresh]);
+  }, [api, configurationRevision, refresh]);
 
   const act: Action = async request => {
     setError(undefined);
@@ -86,33 +104,65 @@ export default function FashionHome({ api }: { api: FashionApi }) {
       mode: RunMode.Live, productId: formText(data, 'product'), characterId: formText(data, 'character'),
       maxCents: formCents(data, 'budget'),
     } : { mode: RunMode.Demo, maxCents: 0 }));
-    if (id) dispatch(chooseFashionRun(id));
+    if (id) {
+      dispatch(chooseFashionRun(id));
+      setIsCreating(false);
+    }
   };
 
+  const canCreate = Boolean(snapshot?.products.length && snapshot.characters.length);
+
   return (
-    <main className="h-full min-h-0 w-full overflow-y-auto bg-slate-50 text-slate-900 dark:bg-slate-950 dark:text-slate-100">
-      <div className="mx-auto grid max-w-6xl gap-5 p-6 lg:p-9">
-        <header>
-          <h1 className="text-3xl font-semibold tracking-tight">{t('fashionName')}</h1>
-          <nav aria-label={t('fashionName')} className="mt-4 flex flex-wrap gap-2 border-b border-slate-200 dark:border-slate-800">
-            {Object.values(tabs).map(value => <button key={value} type="button" onClick={() => { setTab(value); setError(undefined); }}
+    <main lang={language === 'zh' ? 'zh-CN' : 'en'} className="h-full min-h-0 w-full overflow-y-auto bg-[#f7f6f3] text-zinc-900 dark:bg-[#151417] dark:text-zinc-100">
+      <header className="draggable sticky top-0 z-10 border-b border-stone-200 bg-white dark:border-zinc-800 dark:bg-zinc-900">
+        <div className="flex min-h-14 flex-wrap items-center justify-between gap-x-5 gap-y-2 py-2 pl-24 pr-5 sm:pr-8">
+          <div className="flex items-center gap-2.5">
+            <img src={logoUrl} alt="" className="h-10 w-10 shrink-0" draggable={false} />
+            <span className="text-sm font-bold tracking-[0.16em]">{t('fashionName')}</span>
+          </div>
+          <nav aria-label={t('fashionName')} className="non-draggable flex flex-wrap gap-1">
+            {Object.values(FashionTab).map(value => <button key={value} type="button" onClick={() => { setTab(value); setError(undefined); }}
               aria-current={tab === value ? 'page' : undefined}
-              className={`border-b-2 px-3 py-2 text-sm ${tab === value ? 'border-blue-600 font-semibold' : 'border-transparent text-slate-500'}`}>
+              className={`rounded-lg px-3 py-2 text-sm font-medium ${tab === value
+                ? 'bg-[#eee9f3] text-[#42324f] dark:bg-violet-200/15 dark:text-violet-100'
+                : 'text-stone-600 hover:bg-stone-100 dark:text-zinc-300 dark:hover:bg-zinc-800'}`}>
               {t(value)}
             </button>)}
           </nav>
-        </header>
-        {error && <div role="alert" className="rounded-lg border border-rose-200 px-4 py-3 text-sm text-rose-700 dark:border-rose-900 dark:text-rose-300">
+        </div>
+      </header>
+
+      <div className="mx-auto max-w-6xl px-5 py-6 sm:px-8 sm:py-8">
+        {error && <div role="alert" className="mb-4 rounded-lg border border-rose-200 px-4 py-3 text-sm text-rose-700 dark:border-rose-900 dark:text-rose-300">
           {t(`fashionError.${error}`)}
         </div>}
-        {snapshot && <fieldset disabled={busy} className="min-w-0">
-          {tab === tabs.Queue && <div className="grid gap-5">
-            <section className={panel}>
-              <div className="mb-4 flex items-start justify-between gap-3">
-                <div><h2 className="font-semibold">{t('fashionNewRun')}</h2><p className={eyebrow}>{t('fashionTemplate')}</p></div>
-                <button className={button} type="button" onClick={() => { void create(); }}>{t('fashionDemo')}</button>
+        {!snapshot && !error && <p role="status" className={eyebrow}>{t('fashionLoading')}</p>}
+        {snapshot && <fieldset disabled={busy} aria-busy={busy} className="min-w-0">
+          {tab === FashionTab.Queue && <div className="grid gap-5">
+            <section className={`flex flex-wrap items-end justify-between gap-5 ${!run
+              ? 'rounded-2xl bg-[#eee9f3] px-6 py-10 sm:px-9 sm:py-14 dark:bg-[#2a2331]'
+              : ''}`}>
+              <div className="min-w-0">
+                <h1 className={`font-semibold tracking-tight ${run ? 'text-2xl sm:text-3xl' : 'text-3xl sm:text-4xl'}`}>
+                  {t(run ? 'fashionRuns' : 'fashionStudio')}
+                </h1>
+                {!run && <p className="mt-2 max-w-md text-sm leading-relaxed text-stone-700 dark:text-zinc-300">{t('fashionStudioDescription')}</p>}
               </div>
-              <form onSubmit={create} className="grid items-end gap-3 sm:grid-cols-2 lg:grid-cols-[1fr_1fr_1fr_auto]">
+              <div className="flex flex-wrap items-center gap-2">
+                <button className={button} type="button" onClick={() => { void create(); }}>
+                  <PlayIcon className="h-4 w-4" aria-hidden="true" />
+                  {t('fashionDemo')}
+                </button>
+                <button className={primary} type="button" aria-expanded={isCreating} aria-controls="fashion-create"
+                  onClick={() => setIsCreating(current => !current)}>
+                  <PlusIcon className="h-4 w-4" aria-hidden="true" />
+                  {t('fashionNewRun')}
+                </button>
+              </div>
+            </section>
+            <section id="fashion-create" className={panel} hidden={!isCreating}>
+              <p className={`mb-4 ${eyebrow}`}>{t('fashionTemplate')}</p>
+              {canCreate ? <form onSubmit={create} className="grid items-end gap-3 sm:grid-cols-2 xl:grid-cols-[1fr_1fr_1fr_auto]">
                 <Field label="fashionProduct"><select name="product" className={field} required>
                   <option value="">{t('fashionChoose')}</option>
                   {snapshot.products.map(product => <option key={product.id} value={product.id}>{product.sku} · {product.title}</option>)}
@@ -122,33 +172,50 @@ export default function FashionHome({ api }: { api: FashionApi }) {
                   {snapshot.characters.map(character => <option key={character.id} value={character.id}>{character.name}</option>)}
                 </select></Field>
                 <Money name="budget" label="fashionBudget" required />
-                <button className={primary} type="submit" disabled={!snapshot.products.length || !snapshot.characters.length}>
-                  {t('fashionNewRun')}
-                </button>
-              </form>
+                <button className={primary} type="submit">{t('fashionNewRun')}</button>
+              </form> : <div className="flex flex-wrap items-center justify-between gap-3">
+                <p className="text-sm">{t('fashionMissingAssets')}</p>
+                <button type="button" className={button} onClick={() => { setTab(FashionTab.Assets); setError(undefined); }}>{t('fashionManageAssets')}</button>
+              </div>}
             </section>
-            <div className="grid items-start gap-5 lg:grid-cols-[230px_minmax(0,1fr)]">
-              <section className={panel}>
-                <h2 className="mb-3 font-semibold">{t('fashionQueue')}</h2>
-                {!snapshot.runs.length && <p className="text-sm text-slate-500">{t('fashionEmpty')}</p>}
-                <ul className="grid gap-2">
-                  {snapshot.runs.map(item => <li key={item.id}>
-                    <button type="button" aria-pressed={item.id === run?.id} onClick={() => dispatch(chooseFashionRun(item.id))}
-                      className={`w-full rounded-lg p-2.5 text-left text-sm hover:bg-slate-100 dark:hover:bg-slate-800 ${item.id === run?.id ? 'bg-slate-100 dark:bg-slate-800' : ''}`}>
-                      <span className="block truncate font-medium">{item.product.title}</span>
-                      <span className={eyebrow}>{item.id.slice(0, 8).toUpperCase()} · {t(`fashionState.${item.state}`)}</span>
-                    </button>
-                  </li>)}
-                </ul>
-              </section>
-              {run && <RunDetail key={`${run.id}/${run.version}`} run={run} api={api} act={act} />}
+            {run && <div className="grid items-start gap-4 lg:grid-cols-[220px_minmax(0,1fr)]">
+              <ul aria-label={t('fashionRuns')} className="grid min-w-0 gap-1 rounded-2xl border border-stone-200 bg-white p-2 dark:border-zinc-800 dark:bg-zinc-900">
+                {snapshot.runs.map(item => <li key={item.id} className="min-w-0">
+                  <button type="button" aria-pressed={item.id === run.id} onClick={() => dispatch(chooseFashionRun(item.id))}
+                    className={`w-full rounded-xl px-3 py-2.5 text-left text-sm ${item.id === run.id
+                      ? 'bg-[#eee9f3] dark:bg-violet-200/15'
+                      : 'hover:bg-stone-100 dark:hover:bg-zinc-800'}`}>
+                    <span className="block truncate font-semibold">{runTitle(item)}</span>
+                    <span className={eyebrow}>{item.id.slice(0, 8).toUpperCase()} · {t(`fashionState.${item.state}`)}</span>
+                  </button>
+                </li>)}
+              </ul>
+              <RunDetail key={`${run.id}/${run.version}`} run={run} api={api} act={act} />
+            </div>}
+          </div>}
+          {tab === FashionTab.Assets && <section>
+            <h1 className="mb-5 text-2xl font-semibold tracking-tight sm:text-3xl">{t('fashionAssets')}</h1>
+            <div className="grid items-start gap-4 lg:grid-cols-2">
+              <CatalogEditor type="product" snapshot={snapshot} api={api} act={act} />
+              <CatalogEditor type="character" snapshot={snapshot} api={api} act={act} />
             </div>
-          </div>}
-          {tab === tabs.Assets && <div className="grid gap-5 lg:grid-cols-2">
-            <CatalogEditor type="product" snapshot={snapshot} api={api} act={act} />
-            <CatalogEditor type="character" snapshot={snapshot} api={api} act={act} />
-          </div>}
-          {tab === tabs.Settings && <SettingsEditor key={JSON.stringify(snapshot.settings)} snapshot={snapshot} api={api} act={act} />}
+          </section>}
+          {tab === FashionTab.Settings && <section className="grid gap-4">
+            <h1 className="text-2xl font-semibold tracking-tight sm:text-3xl">{t('fashionSettings')}</h1>
+            <div className={panel}>
+              <label className="flex flex-wrap items-center justify-between gap-3 text-sm font-semibold">
+                {t('language')}
+                <select className={`${field} max-w-44 appearance-auto font-normal`} value={language} onChange={event => {
+                  i18nService.setLanguage(event.target.value === 'zh' ? 'zh' : 'en');
+                }}>
+                  <option value="zh" lang="zh-CN">{t('fashionLanguageChinese')}</option>
+                  <option value="en" lang="en">{t('english')}</option>
+                </select>
+              </label>
+            </div>
+            <SettingsEditor key={JSON.stringify(snapshot.settings)} snapshot={snapshot} api={api} act={act}
+              onConfigureText={onConfigureText} onConfigureFeishu={onConfigureFeishu} />
+          </section>}
         </fieldset>}
       </div>
     </main>
@@ -226,7 +293,9 @@ function CatalogForm({ existing, isProduct, api, act, onSave }: {
   </form>;
 }
 
-function SettingsEditor({ snapshot, api, act }: { snapshot: FashionSnapshot; api: FashionApi; act: Action }) {
+function SettingsEditor({ snapshot, api, act, onConfigureText, onConfigureFeishu }: ConfigurationActions & {
+  snapshot: FashionSnapshot; api: FashionApi; act: Action;
+}) {
   const [checked, setChecked] = useState<{ ffmpeg: boolean; text: boolean; ark: boolean; feishu: boolean }>();
   const [saved, setSaved] = useState(false);
   const config = snapshot.settings;
@@ -252,26 +321,45 @@ function SettingsEditor({ snapshot, api, act }: { snapshot: FashionSnapshot; api
     }
   };
   return <section className={panel}>
-    <h2 className="mb-4 font-semibold">{t('fashionSettings')}</h2>
-    <form className="grid gap-4" onSubmit={submit}>
+    <form className="grid gap-5" onSubmit={submit}>
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <h2 className="font-semibold">{t('fashionModels')}</h2>
+        {onConfigureText && <button type="button" className={button} onClick={onConfigureText}>{t('fashionConfigureText')}</button>}
+      </div>
       <div className="grid gap-3 sm:grid-cols-3">
         <Field label="fashionArkKey"><input className={field} type="password" autoComplete="off" name="arkKey"
           placeholder={snapshot.arkConfigured ? t('fashionArkSaved') : undefined} /></Field>
         <Field label="fashionImageModel"><input className={field} name="imageModel" defaultValue={config.imageModel} /></Field>
         <Field label="fashionVideoModel"><input className={field} name="videoModel" defaultValue={config.videoModel} /></Field>
-        <Money name="textCents" label="fashionTextCost" value={config.textCents} />
-        <Money name="frameCents" label="fashionImageCost" value={config.frameCents} />
-        <Money name="clipCents" label="fashionClipCost" value={config.clipCents} />
       </div>
-      <p className={eyebrow}>{t('fashionFeeNote')}</p>
-      <div className="grid gap-3 sm:grid-cols-2">
-        <Field label="fashionFeishuAccount"><select className={field} name="feishuInstance" defaultValue={config.feishuInstance}>
-          <option value="">{t('fashionChoose')}</option>
-          {snapshot.feishuAccounts?.map(account => <option key={account.id} value={account.id}>{account.name}</option>)}
-        </select></Field>
-        <Field label="fashionFeishuOwner"><input className={field} name="feishuOwner" defaultValue={config.feishuOwner} placeholder="ou_…" /></Field>
+      <div className="grid gap-3 border-t border-stone-200 pt-4 dark:border-zinc-800">
+        <h3 className="text-sm font-semibold">{t('fashionRequestBudget')}</h3>
+        <div className="grid gap-3 sm:grid-cols-3">
+          <Money name="textCents" label="fashionTextCost" value={config.textCents} />
+          <Money name="frameCents" label="fashionImageCost" value={config.frameCents} />
+          <Money name="clipCents" label="fashionClipCost" value={config.clipCents} />
+        </div>
+        <p className={eyebrow}>{t('fashionFeeNote')}</p>
       </div>
-      <p className={eyebrow}>{t('fashionFeishuNote')}</p>
+      <details className="group border-t border-stone-200 pt-4 dark:border-zinc-800">
+        <summary className={disclosure}>
+          {t('fashionFeishu')}
+          <ChevronDownIcon className={chevron} aria-hidden="true" />
+        </summary>
+        <div className="mt-3 grid gap-3">
+          <div className="grid gap-3 sm:grid-cols-2">
+            <Field label="fashionFeishuAccount"><select className={field} name="feishuInstance" defaultValue={config.feishuInstance}>
+              <option value="">{t('fashionChoose')}</option>
+              {snapshot.feishuAccounts?.map(account => <option key={account.id} value={account.id}>{account.name}</option>)}
+            </select></Field>
+            <Field label="fashionFeishuOwner"><input className={field} name="feishuOwner" defaultValue={config.feishuOwner} placeholder="ou_…" /></Field>
+          </div>
+          <p className={eyebrow}>{t('fashionFeishuNote')}</p>
+          {onConfigureFeishu && <div>
+            <button type="button" className={button} onClick={onConfigureFeishu}>{t('fashionConfigureFeishu')}</button>
+          </div>}
+        </div>
+      </details>
       <div className="flex flex-wrap items-center gap-2">
         <button type="submit" className={primary}>{t('fashionSave')}</button>
         <button type="button" className={button} onClick={async () => setChecked(await act(() => api.testSetup()))}>{t('fashionConnection')}</button>
@@ -298,6 +386,9 @@ function RunDetail({ run, api, act }: { run: Run; api: FashionApi; act: Action }
   const canRetry = run.state === RunState.Failed || run.state === RunState.Budget || run.state === RunState.Reconcile;
   const canCancel = run.state !== RunState.Approved && run.state !== RunState.Rejected && run.state !== RunState.Cancelled;
   const progress = run.shots.filter(shot => shot.ready).length;
+  const reviewNotes = <Field label="fashionComment">
+    <textarea maxLength={1500} value={note} onChange={event => setNote(event.target.value)} className={field} />
+  </Field>;
   const change = (index: number, key: 'direction' | 'caption', value: string) => {
     if (!plan) return;
     setDraft({ ...plan, shots: plan.shots.map((shot, i) => i === index ? { ...shot, [key]: value } : shot) });
@@ -308,8 +399,10 @@ function RunDetail({ run, api, act }: { run: Run; api: FashionApi; act: Action }
   };
   return <section className={panel}>
     <div className="flex flex-wrap justify-between gap-3">
-      <div><h2 className="text-lg font-semibold">{run.product.title}</h2>
-        <p className={eyebrow}>{run.character.name} · {t('fashionVersion', { version: String(run.version) })} · {t(`fashionState.${run.state}`)}</p></div>
+      <div className="min-w-0">
+        <h2 className="break-words text-lg font-semibold">{runTitle(run)}</h2>
+        <p className={eyebrow}>{run.mode === RunMode.Demo ? t('fashionDemoModel') : run.character.name} · {t('fashionVersion', { version: String(run.version) })} · {t(`fashionState.${run.state}`)}</p>
+      </div>
       {canCancel && <button type="button" className={button} onClick={() => void act(() => api.cancel(run.id))}>{t('fashionCancel')}</button>}
     </div>
     <div className="mt-3 grid gap-1">
@@ -317,7 +410,7 @@ function RunDetail({ run, api, act }: { run: Run; api: FashionApi; act: Action }
         <span>{t('fashionProgress', { done: String(progress) })}</span>
         {run.mode === RunMode.Live && <span>{t('fashionReserved', { reserved: money(run.reservedCents), max: money(run.maxCents) })}</span>}
       </div>
-      <progress className="w-full accent-blue-600" aria-label={t('fashionQueue')} value={progress} max={6} />
+      <progress className="h-1.5 w-full appearance-none overflow-hidden rounded-full bg-stone-200 dark:bg-zinc-800 [&::-webkit-progress-bar]:bg-transparent [&::-webkit-progress-value]:bg-violet-600 dark:[&::-webkit-progress-value]:bg-violet-300" aria-label={t('fashionProgress', { done: String(progress) })} value={progress} max={6} />
       {run.error && <p className="text-sm text-rose-700 dark:text-rose-300">{t(`fashionError.${run.error}`)}</p>}
       {run.delivery && <p className={eyebrow}>{t(`fashionDelivery.${run.delivery}`)}</p>}
     </div>
@@ -337,13 +430,12 @@ function RunDetail({ run, api, act }: { run: Run; api: FashionApi; act: Action }
       <video src={mediaUrl(run.final.id)} controls playsInline preload="metadata" aria-label={t('fashionPreview')}
         className="max-h-[420px] w-full rounded-xl bg-slate-950" />
       <div className="grid gap-3">
-        <h3 className="font-semibold">{t('fashionRender')}</h3>
+        <h3 className="font-semibold">{t(run.state === RunState.Review ? 'fashionRender' : 'fashionPreview')}</h3>
         {run.product.images.length > 0 && <div className="flex flex-wrap gap-2">
           {run.product.images.map(id => <img key={id} src={mediaUrl(id)} className="h-20 w-20 rounded object-cover" alt={t('fashionProduct')} />)}
         </div>}
         {run.reviewComment && <p className="break-words text-sm">{run.reviewComment}</p>}
-        {canRework && <Field label="fashionComment"><textarea maxLength={1500} value={note}
-          onChange={event => setNote(event.target.value)} className={field} /></Field>}
+        {run.state === RunState.Review && reviewNotes}
         {run.state === RunState.Review && <div className="flex flex-wrap gap-2">
           <button type="button" className={primary} onClick={() => review(Decision.Approve)}>{t('fashionApprove')}</button>
           <button type="button" className={button} onClick={() => review(Decision.Return)}>{t('fashionReturn')}</button>
@@ -355,32 +447,39 @@ function RunDetail({ run, api, act }: { run: Run; api: FashionApi; act: Action }
         </div>}
       </div>
     </div>}
-    {plan && <div className="mt-5 grid gap-3">
-      <h3 className="font-semibold">{t('fashionPlan')}</h3>
-      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
-        {run.shots.map((shot, index) => <article key={shot.number} className="grid content-start gap-2 rounded-xl border border-slate-200 p-3 dark:border-slate-700">
-          <h4 className="text-sm font-semibold">{shot.number}. {t(`fashionShot.${ShotRole[index]}`)}</h4>
-          <p className={eyebrow}>{t(`fashionSource.${shot.source}`)}</p>
-          {shot.clip ? <video src={mediaUrl(shot.clip.id)} controls playsInline preload="none" className="w-full rounded-lg" />
-            : shot.frame && <img src={mediaUrl(shot.frame.id)} alt={t(`fashionShot.${ShotRole[index]}`)} className="max-h-52 w-full rounded-lg object-contain" />}
-          {editing ? <>
-            <Field label="fashionDirection"><textarea className={field} value={plan.shots[index].direction} maxLength={600}
-              onChange={event => change(index, 'direction', event.target.value)} /></Field>
-            <Field label="fashionCaption"><input className={field} value={plan.shots[index].caption} maxLength={90}
-              onChange={event => change(index, 'caption', event.target.value)} /></Field>
-          </> : <><p className="break-words text-sm">{plan.shots[index].direction}</p>
-            {plan.shots[index].caption && <p className={eyebrow}>{plan.shots[index].caption}</p>}</>}
-          {canRework && <button type="button" className={button}
-            onClick={() => void act(() => api.rework({ ...version, shot: shot.number, comment: note }))}>{t('fashionRework')}</button>}
-        </article>)}
+    {plan && <details key={run.final ? 'review' : 'production'} open={!run.final || run.state === RunState.Rework}
+      className="group mt-5 border-t border-stone-200 pt-4 dark:border-zinc-800">
+      <summary className={disclosure}>
+        {t('fashionPlan')}
+        <ChevronDownIcon className={chevron} aria-hidden="true" />
+      </summary>
+      <div className="mt-3 grid gap-3">
+        {canRework && run.state !== RunState.Review && reviewNotes}
+        <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+          {run.shots.map((shot, index) => <article key={shot.number} className="grid content-start gap-2 rounded-xl border border-stone-200 p-3 dark:border-zinc-800">
+            <h4 className="text-sm font-semibold">{shot.number}. {t(`fashionShot.${ShotRole[index]}`)}</h4>
+            <p className={eyebrow}>{t(`fashionSource.${shot.source}`)}</p>
+            {shot.clip ? <video src={mediaUrl(shot.clip.id)} controls playsInline preload="none" className="w-full rounded-lg" />
+              : shot.frame && <img src={mediaUrl(shot.frame.id)} alt={t(`fashionShot.${ShotRole[index]}`)} className="max-h-52 w-full rounded-lg object-contain" />}
+            {editing ? <>
+              <Field label="fashionDirection"><textarea className={field} value={plan.shots[index].direction} maxLength={600}
+                onChange={event => change(index, 'direction', event.target.value)} /></Field>
+              <Field label="fashionCaption"><input className={field} value={plan.shots[index].caption} maxLength={90}
+                onChange={event => change(index, 'caption', event.target.value)} /></Field>
+            </> : <><p className="break-words text-sm">{plan.shots[index].direction}</p>
+              {plan.shots[index].caption && <p className={eyebrow}>{plan.shots[index].caption}</p>}</>}
+            {canRework && <button type="button" className={button}
+              onClick={() => void act(() => api.rework({ ...version, shot: shot.number, comment: note }))}>{t('fashionRework')}</button>}
+          </article>)}
+        </div>
+        {editing && <div className="flex gap-2">
+          <button type="button" className={button} disabled={!draft} onClick={() => {
+            if (draft) void act(() => api.savePlan({ ...version, plan: draft }));
+          }}>{t('fashionSave')}</button>
+          <button type="button" className={primary} disabled={Boolean(draft)}
+            onClick={() => void act(() => api.approvePlan(version))}>{t('fashionApprovePlan')}</button>
+        </div>}
       </div>
-      {editing && <div className="flex gap-2">
-        <button type="button" className={button} disabled={!draft} onClick={() => {
-          if (draft) void act(() => api.savePlan({ ...version, plan: draft }));
-        }}>{t('fashionSave')}</button>
-        <button type="button" className={primary} disabled={Boolean(draft)}
-          onClick={() => void act(() => api.approvePlan(version))}>{t('fashionApprovePlan')}</button>
-      </div>}
-    </div>}
+    </details>}
   </section>;
 }

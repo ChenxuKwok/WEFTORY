@@ -161,7 +161,7 @@ import {
   EnterpriseQuotaMessageMetadataKey,
 } from '../shared/enterpriseAccount/constants';
 import { resolveEnterpriseQuotaError } from '../shared/enterpriseAccount/quotaError';
-import { FashionIpc, FashionMediaScheme } from '../shared/fashion/constants';
+import { FashionIpc, FashionLogoFile, FashionMediaScheme, FashionName } from '../shared/fashion/constants';
 import {
   HtmlShareAccessMode,
   type HtmlShareAccessMode as HtmlShareAccessModeValue,
@@ -15418,11 +15418,12 @@ if (!gotTheLock) {
     );
     const { isMaximized: shouldRestoreMaximized, ...initialWindowBounds } = initialWindowState;
 
+    const isFashionStudio = fashionService !== null;
     mainWindow = new BrowserWindow({
       ...initialWindowBounds,
       minWidth: MIN_APP_WINDOW_WIDTH,
       minHeight: MIN_APP_WINDOW_HEIGHT,
-      title: APP_NAME,
+      title: isFashionStudio ? FashionName : APP_NAME,
       icon: getAppIconPath(),
       ...(isMac
         ? {
@@ -15460,9 +15461,11 @@ if (!gotTheLock) {
     });
     const createdMainWindow = mainWindow;
 
-    // 设置 macOS Dock 图标（开发模式下 Electron 默认图标不是应用 Logo）
-    if (isMac && isDev) {
-      const iconPath = getNotificationIconPath();
+    // Use the studio mark in the macOS Dock, including in development.
+    if (isMac && (isFashionStudio || isDev)) {
+      const iconPath = isFashionStudio
+        ? path.join(__dirname, app.isPackaged ? '../dist' : '../public', FashionLogoFile)
+        : getNotificationIconPath();
       if (iconPath) {
         app.dock.setIcon(nativeImage.createFromPath(iconPath));
       }
@@ -15730,22 +15733,23 @@ if (!gotTheLock) {
     mainWindow.once('ready-to-show', () => {
       clearTimeout(showFallbackTimer);
       if (isQuitting) return;
-      // 开机自启时不显示窗口，仅显示托盘图标
-      if (!isAutoLaunched()) {
+      // The studio has no tray, so an auto-launched instance still opens its window.
+      if (isFashionStudio || !isAutoLaunched()) {
         mainWindow?.show();
       }
       markFirstFrameRendered('ready-to-show');
       // Initialize main-process i18n from stored language before creating UI elements.
       const initLang = getStore().get<{ language?: string }>('app_config')?.language;
       setLanguage(initLang === 'en' ? 'en' : 'zh');
-      // 窗口就绪后创建系统托盘
-      createTray(() => isQuitting ? null : mainWindow, {
-        isEnabled: () => desktopCompanionManager?.getState().preferences.enabled ?? false,
-        toggleEnabled: () => desktopCompanionManager?.setPreferences({
-          enabled: !desktopCompanionManager.getState().preferences.enabled,
-        }, CompanionAnalyticsSource.Tray),
-        openPanel: () => desktopCompanionManager?.togglePanel(),
-      });
+      if (!isFashionStudio) {
+        createTray(() => isQuitting ? null : mainWindow, {
+          isEnabled: () => desktopCompanionManager?.getState().preferences.enabled ?? false,
+          toggleEnabled: () => desktopCompanionManager?.setPreferences({
+            enabled: !desktopCompanionManager.getState().preferences.enabled,
+          }, CompanionAnalyticsSource.Tray),
+          openPanel: () => desktopCompanionManager?.togglePanel(),
+        });
+      }
 
       // Start cron polling after the window is ready.
       (async () => {
@@ -16755,7 +16759,7 @@ if (!gotTheLock) {
     console.log('[Main] initApp: creating window');
     createWindow();
     profiler.measure('createWindow');
-    desktopCompanionManager = new DesktopCompanionManager({
+    desktopCompanionManager = fashionService ? null : new DesktopCompanionManager({
       enginePhase: getOpenClawEngineManager().getStatus().phase,
       reportAnalytics: event => getMainLogReporter().report(event),
       getAnalyticsOwner: () => getStore().get<AppConfigSettings>('app_config')?.usageAnalyticsEnabled === false ? null : getAuthSessionKey() ?? '',

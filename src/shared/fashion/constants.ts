@@ -1,3 +1,6 @@
+export const FashionName = 'WEFTORY';
+export const FashionLogoFile = 'weftory-mark.png';
+
 export const FashionIpc = {
   Snapshot: 'fashion:snapshot',
   Import: 'fashion:import',

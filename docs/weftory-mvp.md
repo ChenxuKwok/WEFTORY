@@ -1,7 +1,7 @@
 # WEFTORY on Apple Silicon
 
-WEFTORY is a workspace in the LobsterAI desktop application. It produces one
-vertical video from one SKU and one virtual model. The app handles production
+WEFTORY opens directly in its production workspace on Apple Silicon. It
+produces one vertical video from one SKU and one virtual model. The app handles production
 while it is running and resumes durable jobs when reopened.
 
 ## Local development
@@ -12,14 +12,15 @@ For subsequent starts use `npm run electron:dev`. Keep FFmpeg and ffprobe with
 libx264 and the subtitles filter at `/opt/homebrew/bin` or `/usr/local/bin`
 for development.
 
-Open **WEFTORY → Run a demo**. Review the storyboard, approve it and inspect
-the 21-second demo render. Return it for rework and regenerate a shot to
+Choose **Run a demo** in the production workspace. Review and approve the
+storyboard, then inspect the 21-second demo render. Return it for rework and regenerate a shot to
 exercise versioning. Approve the new render and export it from the review page.
 
 ## Live setup
 
-1. Configure the existing desktop text model. In WEFTORY Setup, save a
-   mainland Ark API key, one Seedream endpoint and one Seedance 2.x endpoint.
+1. In **Setup → Configure text model**, choose the model for storyboards.
+   In **Setup**, save a mainland Ark API key, one Seedream endpoint and one
+   Seedance 2.x endpoint.
    The setup check verifies Ark authentication and video-task listing.
    Endpoint access and reference support require a sample generation.
 2. Enter conservative per-request costs in CNY for the selected account.
@@ -32,8 +33,8 @@ exercise versioning. Approve the new render and export it from the review page.
    `asset://…` ID. The first-frame route requires confirmation that the
    selected endpoint permits the reference. Verify SKU details and model
    consistency before approving a real render.
-4. For Feishu, enable one bot in the existing IM settings and bind it to
-   one operator's `open_id` in WEFTORY Setup. Grant the bot permissions to
+4. Under **Setup → Feishu delivery**, configure a bot and bind it to one
+   operator's `open_id`. Grant the bot permissions to
    receive private messages, upload files and send messages. Use
    `/wft create SKU`, `/wft status ID`, `/wft pending`,
    `/wft approve-plan ID VERSION`, `/wft cancel ID` or the review command
