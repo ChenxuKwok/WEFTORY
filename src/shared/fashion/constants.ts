@@ -1,5 +1,7 @@
 export const FashionName = 'WEFTORY';
 export const FashionLogoFile = 'weftory-mark.png';
+export const DefaultSeedanceModel = 'doubao-seedance-2-5-260628';
+export const ArkRechargeUrl = 'https://console.volcengine.com/finance/fund/recharge';
 
 export const FashionIpc = {
   Snapshot: 'fashion:snapshot',

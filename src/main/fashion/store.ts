@@ -1,6 +1,6 @@
 import type Database from 'better-sqlite3';
 
-import type { Asset, Character, Plan, Product, Run, Settings } from '../../shared/fashion/contracts';
+import { type Asset, type Character, DefaultSeedanceModel, type Plan, type Product, type Run, type Settings } from '../../shared/fashion/contracts';
 
 export const TaskState = {
   Submitting: 'submitting',
@@ -23,7 +23,7 @@ export type ProviderTask = {
 
 const defaultSettings: Settings = {
   imageModel: '',
-  videoModel: '',
+  videoModel: DefaultSeedanceModel,
   textCents: 0,
   frameCents: 0,
   clipCents: 0,
@@ -122,7 +122,8 @@ export class FashionStore {
   }
 
   getSettings(): Settings {
-    return this.get<Settings>('SELECT data FROM fashion_settings WHERE id = 1') ?? { ...defaultSettings };
+    const saved = this.get<Settings>('SELECT data FROM fashion_settings WHERE id = 1');
+    return { ...defaultSettings, ...saved, videoModel: saved?.videoModel || DefaultSeedanceModel };
   }
 
   getSecret(): Buffer | undefined {

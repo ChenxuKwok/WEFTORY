@@ -123,7 +123,9 @@ export class FashionProviders {
     ] : [
       { type: 'image_url', image_url: { url: await this.dataUrl(frame) }, role: 'first_frame' },
     ])];
-    return { model, content, ratio: '9:16', resolution: '720p', duration: 5, generate_audio: false, watermark: false };
+    // Seedance 2.5 requires the aspect ratio to follow the input in first-frame mode.
+    const ratio = !avatar && model.startsWith('doubao-seedance-2-5-') ? 'adaptive' : '9:16';
+    return { model, content, ratio, resolution: '720p', duration: 5, generate_audio: false, watermark: false };
   }
 
   async submitVideo(body: object, signal: AbortSignal): Promise<string> {

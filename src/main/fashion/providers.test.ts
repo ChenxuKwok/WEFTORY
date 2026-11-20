@@ -2,7 +2,7 @@ import { fileURLToPath } from 'node:url';
 
 import { describe, expect, test, vi } from 'vitest';
 
-import { FashionError, type Run, ShotSource } from '../../shared/fashion/contracts';
+import { DefaultSeedanceModel, FashionError, type Run, ShotSource } from '../../shared/fashion/contracts';
 import type { FashionMedia } from './media';
 import { FashionProviders } from './providers';
 
@@ -31,13 +31,15 @@ describe('Ark video adapter', () => {
     const providers = new FashionProviders(media, () => 'fixture-key', () => null, vi.fn());
     const run = { character: { arkAsset: 'asset://avatar-fixture' }, plan: { shots: [{ direction: 'Show the outfit.' }] } } as unknown as Run;
     const shot = { number: 1, source: ShotSource.Generated, attempt: 0 };
-    const avatar = await providers.videoRequest('seedance-fixture', run, shot, file, file);
+    const avatar = await providers.videoRequest(DefaultSeedanceModel, run, shot, file, file);
+    expect(avatar).toMatchObject({ model: DefaultSeedanceModel, ratio: '9:16' });
     expect(avatar.content.slice(1)).toEqual([
       { type: 'image_url', image_url: { url: 'asset://avatar-fixture' }, role: 'reference_image' },
       { type: 'image_url', image_url: { url: expect.stringMatching(/^data:image\/png;base64,/) }, role: 'reference_image' },
     ]);
     run.character.arkAsset = '';
-    const first = await providers.videoRequest('seedance-fixture', run, shot, file, file);
+    const first = await providers.videoRequest(DefaultSeedanceModel, run, shot, file, file);
+    expect(first).toMatchObject({ model: DefaultSeedanceModel, ratio: 'adaptive' });
     expect(first.content.slice(1)).toEqual([
       { type: 'image_url', image_url: { url: expect.stringMatching(/^data:image\/png;base64,/) }, role: 'first_frame' },
     ]);

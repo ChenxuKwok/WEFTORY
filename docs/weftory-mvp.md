@@ -19,8 +19,10 @@ exercise versioning. Approve the new render and export it from the review page.
 ## Live setup
 
 1. In **Setup → Configure text model**, choose the model for storyboards.
-   In **Setup**, save a mainland Ark API key, one Seedream endpoint and one
-   Seedance 2.x endpoint.
+   In **Setup**, save a mainland Ark API key and configure a Seedream endpoint.
+   Video generation defaults to `doubao-seedance-2-5-260628`. You can still
+   select an account-specific endpoint. Use **Top up Ark account** to open
+   the provider's recharge page.
    The setup check verifies Ark authentication and video-task listing.
    Endpoint access and reference support require a sample generation.
 2. Enter conservative per-request costs in CNY for the selected account.

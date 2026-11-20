@@ -6,7 +6,7 @@ import path from 'node:path';
 import Database from 'better-sqlite3';
 import { afterEach, describe, expect, test, vi } from 'vitest';
 
-import { type Asset, Decision, FashionError, type Run,RunMode, RunState } from '../../shared/fashion/contracts';
+import { type Asset, Decision, DefaultSeedanceModel, FashionError, type Run,RunMode, RunState } from '../../shared/fashion/contracts';
 import type { FeishuInstanceConfig } from '../im/types';
 import { FashionFeishu } from './feishu';
 import { FashionMedia } from './media';
@@ -62,6 +62,18 @@ function fixture(media?: FashionMedia) {
 }
 
 describe('WEFTORY durable production', () => {
+  test('defaults Seedance for new and blank legacy settings and keeps an explicit endpoint', () => {
+    const db = new Database(':memory:');
+    cleanup.push(() => db.close());
+    const store = new FashionStore(db);
+    const defaults = store.getSettings();
+    expect(defaults.videoModel).toBe(DefaultSeedanceModel);
+    store.saveSettings({ ...defaults, videoModel: '' });
+    expect(store.getSettings().videoModel).toBe(DefaultSeedanceModel);
+    store.saveSettings({ ...defaults, videoModel: 'ep-existing' });
+    expect(store.getSettings().videoModel).toBe('ep-existing');
+  });
+
   test('migrates repeatedly, completes mock generation, and invalidates stale review after rework', async () => {
     const { db, service, store, until, neutralMedia } = fixture();
     expect(db.prepare('SELECT value FROM legacy').pluck().get()).toBe('keep');

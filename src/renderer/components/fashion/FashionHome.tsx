@@ -2,7 +2,7 @@ import { ChevronDownIcon, PlayIcon, PlusIcon } from '@heroicons/react/24/outline
 import { type FormEvent, type ReactNode, useCallback, useEffect, useRef, useState, useSyncExternalStore } from 'react';
 import { useDispatch, useSelector } from 'react-redux';
 
-import { Decision, FashionError, FashionLogoFile, FashionMediaScheme, RunMode, RunState, ShotRole } from '../../../shared/fashion/constants';
+import { ArkRechargeUrl, Decision, FashionError, FashionLogoFile, FashionMediaScheme, RunMode, RunState, ShotRole } from '../../../shared/fashion/constants';
 import type { Character, FashionApi, FashionResult, FashionSnapshot, Plan, Product, Run } from '../../../shared/fashion/contracts';
 import { i18nService } from '../../services/i18n';
 import type { RootState } from '../../store';
@@ -324,7 +324,13 @@ function SettingsEditor({ snapshot, api, act, onConfigureText, onConfigureFeishu
     <form className="grid gap-5" onSubmit={submit}>
       <div className="flex flex-wrap items-center justify-between gap-2">
         <h2 className="font-semibold">{t('fashionModels')}</h2>
-        {onConfigureText && <button type="button" className={button} onClick={onConfigureText}>{t('fashionConfigureText')}</button>}
+        <div className="flex flex-wrap gap-2">
+          <button type="button" className={button} onClick={() => void act(async () => {
+            const result = await window.electron.shell.openExternal(ArkRechargeUrl);
+            return result.success ? { ok: true, value: undefined } : { ok: false, error: FashionError.Setup };
+          })}>{t('fashionArkRecharge')}</button>
+          {onConfigureText && <button type="button" className={button} onClick={onConfigureText}>{t('fashionConfigureText')}</button>}
+        </div>
       </div>
       <div className="grid gap-3 sm:grid-cols-3">
         <Field label="fashionArkKey"><input className={field} type="password" autoComplete="off" name="arkKey"
