@@ -8,13 +8,16 @@ import { bridgeSchema, Decision, FashionError, type Run,RunMode, RunState } from
 import { t } from '../i18n';
 import type { FeishuInstanceConfig } from '../im/types';
 import { fail,FashionFailure } from './errors';
+import { FeishuVideoDraft } from './feishuVideoDraft';
+import { FeishuPhotoVideoQueue } from './photoVideo';
 import type { FashionService } from './service';
+import type { PhotoVideoJob } from './store';
 
 const base = 'https://open.feishu.cn/open-apis';
 const maxAttachment = 30_000_000;
 const command = {
   Create: 'create', Status: 'status', Pending: 'pending', ApprovePlan: 'approve-plan',
-  Review: 'review', Cancel: 'cancel', Deliver: 'deliver',
+  Review: 'review', Cancel: 'cancel', Deliver: 'deliver', Video: 'video',
 } as const;
 const decisionByText: Record<string, typeof Decision[keyof typeof Decision]> = {
   approve: Decision.Approve, return: Decision.Return, reject: Decision.Reject,
@@ -24,14 +27,30 @@ const apiEnvelope = z.object({ code: z.number(), data: z.unknown().optional(), t
 type Delivery = { state: 'ready' | 'sending' | 'sent' | 'failed' | 'uncertain'; fileKey?: string };
 type Code = { nonce: string; conversation: string; version: number; assetId: string; sha256: string; expiresAt: number };
 
-class SendRejected extends Error {}
+class SendRejected extends Error {
+  constructor(code: number) {
+    super(`Feishu API rejected request (${code})`);
+    this.name = 'SendRejected';
+  }
+}
 
 export class FashionFeishu {
   private active = new Set<string>();
   private jobs = new Set<Promise<void>>();
   private stopped = false;
+  private readonly photoVideos: FeishuPhotoVideoQueue;
+  private readonly videoDrafts: FeishuVideoDraft;
 
-  constructor(private readonly service: FashionService, private readonly instances: () => FeishuInstanceConfig[]) {}
+  constructor(
+    private readonly service: FashionService,
+    private readonly instances: () => FeishuInstanceConfig[],
+    inboundDirectory: () => string = () => fail(FashionError.Setup),
+  ) {
+    this.photoVideos = new FeishuPhotoVideoQueue(service,
+      job => Boolean(this.photoAccount(job)), (job, text) => this.deliverPhotoVideo(job, text));
+    this.videoDrafts = new FeishuVideoDraft(service, inboundDirectory,
+      (recipient, card) => this.sendVideoCard(recipient, card), () => this.photoVideos.wake());
+  }
 
   accounts() {
     return this.instances().filter(instance => instance.enabled && instance.appId && instance.appSecret
@@ -46,11 +65,12 @@ export class FashionFeishu {
 
   recover(): void {
     this.service.store.runs().forEach(run => this.changed(run));
+    this.photoVideos.wake();
   }
 
   async stop(): Promise<void> {
     this.stopped = true;
-    await Promise.allSettled(this.jobs);
+    await Promise.all([this.videoDrafts.stop(), this.photoVideos.stop(), Promise.allSettled(this.jobs)]);
   }
 
   changed(run: Run): void {
@@ -62,14 +82,20 @@ export class FashionFeishu {
 
   handle(raw: unknown): string {
     const parsed = bridgeSchema.safeParse(raw);
-    if (!parsed.success) return t('fashionBotDenied');
+    if (!parsed.success || this.stopped) return t('fashionBotDenied');
     const input = parsed.data;
     const settings = this.service.store.getSettings();
     const account = this.account(settings.feishuInstance);
     if (!account || account.instanceId.slice(0, 8) !== input.accountId || input.senderId !== settings.feishuOwner) {
-      return t('fashionBotDenied');
+      return input.imageFile || input.imageUnavailable ? '' : t('fashionBotDenied');
     }
     const key = `${account.instanceId}/${input.messageId}`;
+    const recipient = { instance: account.instanceId, owner: input.senderId };
+    if (input.card) return this.videoDrafts.action(recipient, input.messageId, input.card);
+    if (input.imageUnavailable) return this.videoDrafts.photoUnavailable(recipient, input.conversationId);
+    if (input.imageFile) {
+      return this.videoDrafts.receive(recipient, input.conversationId, key, input.imageFile);
+    }
     return this.service.store.atomic(() => {
       const duplicate = this.service.store.getMessage(key);
       if (duplicate !== undefined) return duplicate;
@@ -86,8 +112,11 @@ export class FashionFeishu {
   }
 
   private execute(input: z.infer<typeof bridgeSchema>, account: FeishuInstanceConfig, owner: string): string {
-    const [prefix, action, id, value, choice, ...notes] = input.command.trim().split(/\s+/);
+    const [prefix, action, id, value, choice, ...notes] = (input.command ?? '').trim().split(/\s+/);
     if (prefix !== '/wft') return t('fashionBotUsage');
+    if (action === command.Video) {
+      return this.videoDrafts.open({ instance: account.instanceId, owner }, input.conversationId, id === 'new');
+    }
     const owned = (run: Run) => run.recipient?.instance === account.instanceId && run.recipient.owner === owner;
     if (action === command.Create) {
       const product = this.service.store.products().find(item => item.sku === id);
@@ -181,15 +210,9 @@ export class FashionFeishu {
       if (run.state === RunState.Approved) {
         const asset = this.service.approved(run.id, run.version);
         const path = await this.service.media.verify(asset);
-        const size = (await stat(path)).size;
-        if (size > Math.min(maxAttachment, (account.mediaMaxMb || 30) * 1_000_000)) fail(FashionError.Media);
         if (!saved.fileKey) {
-          const form = new FormData();
-          form.set('file_type', 'mp4');
-          form.set('file_name', `WEFTORY-${this.shortId(run.id)}-v${run.version}.mp4`);
-          form.set('file', await openAsBlob(path, { type: 'video/mp4' }));
-          const uploaded = await this.api('/im/v1/files', { method: 'POST', body: form }, token);
-          saved = { ...saved, fileKey: z.object({ file_key: z.string().min(1) }).parse(uploaded.data).file_key };
+          const name = `WEFTORY-${this.shortId(run.id)}-v${run.version}.mp4`;
+          saved = { ...saved, fileKey: await this.uploadVideo(path, account, token, name) };
           this.service.store.saveDelivery(id, saved);
         }
         this.service.approved(run.id, run.version);
@@ -223,15 +246,72 @@ export class FashionFeishu {
     return result.tenant_access_token ?? fail(FashionError.Setup);
   }
 
+  private photoAccount(job: PhotoVideoJob): FeishuInstanceConfig | undefined {
+    const settings = this.service.store.getSettings();
+    if (this.stopped || !job.plan || job.instance !== settings.feishuInstance
+      || job.owner !== settings.feishuOwner) return undefined;
+    return this.account(job.instance);
+  }
+
+  private async sendVideoCard(recipient: { instance: string; owner: string }, card: object): Promise<string | undefined> {
+    const settings = this.service.store.getSettings();
+    const account = this.account(recipient.instance);
+    if (!account || this.stopped || settings.feishuInstance !== recipient.instance || settings.feishuOwner !== recipient.owner) return;
+    const token = await this.token(account);
+    const latest = this.service.store.getSettings();
+    if (this.stopped || latest.feishuInstance !== recipient.instance || latest.feishuOwner !== recipient.owner) return;
+    const response = await this.api('/im/v1/messages?receive_id_type=open_id', {
+      method: 'POST', body: JSON.stringify({
+        receive_id: recipient.owner, msg_type: 'interactive', content: JSON.stringify(card),
+      }),
+    }, token).catch(error => {
+      if (error instanceof SendRejected) console.warn('[WEFTORY] Feishu card send rejected:', error.message);
+      throw error;
+    });
+    return z.object({ message_id: z.string().min(1) }).parse(response.data).message_id;
+  }
+
+  private async deliverPhotoVideo(job: PhotoVideoJob, text?: string): Promise<void> {
+    const account = this.photoAccount(job) ?? fail(FashionError.Setup);
+    const token = await this.token(account);
+    let content: Record<string, string> = { text: text ?? '' };
+    if (text === undefined) {
+      const asset = job.video ?? fail(FashionError.Media);
+      if (!job.fileKey) {
+        job.fileKey = await this.uploadVideo(await this.service.media.verify(asset), account, token, 'WEFTORY-10s.mp4');
+        this.service.store.savePhotoVideo(job);
+      }
+      content = { file_key: job.fileKey };
+    }
+    if (!this.photoAccount(job)) fail(FashionError.Setup);
+    await this.api('/im/v1/messages?receive_id_type=open_id', {
+      method: 'POST', body: JSON.stringify({
+        receive_id: job.owner, msg_type: text === undefined ? 'file' : 'text', content: JSON.stringify(content),
+        uuid: createHash('sha256').update(job.id).update(text ?? 'mp4').digest('hex').slice(0, 40),
+      }),
+    }, token);
+  }
+
+  private async uploadVideo(path: string, account: FeishuInstanceConfig, token: string, name: string): Promise<string> {
+    const size = (await stat(path)).size;
+    if (size > Math.min(maxAttachment, (account.mediaMaxMb || 30) * 1_000_000)) fail(FashionError.Media);
+    const form = new FormData();
+    form.set('file_type', 'mp4');
+    form.set('file_name', name);
+    form.set('file', await openAsBlob(path, { type: 'video/mp4' }));
+    const uploaded = await this.api('/im/v1/files', { method: 'POST', body: form }, token);
+    return z.object({ file_key: z.string().min(1) }).parse(uploaded.data).file_key;
+  }
+
   private async api(route: string, init: RequestInit, token?: string) {
     const headers = new Headers();
     if (typeof init.body === 'string') headers.set('Content-Type', 'application/json');
     if (token) headers.set('Authorization', `Bearer ${token}`);
     const response = await fetch(base + route, { ...init, headers, signal: AbortSignal.timeout(15_000), redirect: 'error' });
     if (response.status >= 500) fail(FashionError.Provider);
-    if (!response.ok) throw new SendRejected();
+    if (!response.ok) throw new SendRejected(response.status);
     const result = apiEnvelope.parse(await response.json());
-    if (result.code !== 0) throw new SendRejected();
+    if (result.code !== 0) throw new SendRejected(result.code);
     return result;
   }
 

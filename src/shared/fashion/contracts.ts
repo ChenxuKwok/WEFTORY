@@ -1,6 +1,6 @@
 import { z } from 'zod';
 
-import { Decision, type FashionError, RunMode, type RunState, type ShotSource } from './constants';
+import { Decision, type FashionError, FeishuVideoCardAction, RunMode, type RunState, type ShotSource } from './constants';
 
 export * from './constants';
 
@@ -65,8 +65,23 @@ export const bridgeSchema = z.object({
   senderId: label,
   messageId: label,
   conversationId: label,
-  command: z.string().max(1600),
+  command: z.string().max(1600).optional(),
+  imageFile: z.string().max(256).regex(/^(?:[\p{L}\p{N}._-]+---)?[\da-f-]{36}\.(?:png|jpe?g)$/iu).optional(),
+  imageUnavailable: z.literal(true).optional(),
+  card: z.object({
+    action: z.enum(FeishuVideoCardAction),
+    draftId: idSchema,
+    revision: z.number().int().positive(),
+    model: memo.optional(),
+    script: memo.optional(),
+  }).optional(),
+}).refine(input => [input.command, input.imageFile, input.imageUnavailable, input.card].filter(Boolean).length === 1);
+
+export const photoVideoPlanSchema = z.object({
+  model: z.string().trim().min(1).max(280),
+  storyboard: z.string().trim().min(1).max(1500),
 });
+export type PhotoVideoPlan = z.infer<typeof photoVideoPlanSchema>;
 
 export type Product = z.infer<typeof productSchema> & { id: string };
 export type Character = z.infer<typeof characterSchema> & { id: string };

@@ -16269,7 +16269,8 @@ if (!gotTheLock) {
           mainWindow.webContents.send(FashionIpc.Changed, { id: run.id, version: run.version });
         }
       }, () => Boolean(arkKey()));
-      fashionFeishu = new FashionFeishu(fashionService, () => getIMGatewayManager().getIMStore().getFeishuInstances());
+      fashionFeishu = new FashionFeishu(fashionService, () => getIMGatewayManager().getIMStore().getFeishuInstances(),
+        () => path.join(getOpenClawEngineManager().getStateDir(), 'media', 'inbound'));
       registerFashionIpc(fashionService, fashionFeishu, () => mainWindow,
         isDev ? new URL(DEV_SERVER_URL).href : pathToFileURL(path.join(__dirname, '../dist/index.html')).href);
     }

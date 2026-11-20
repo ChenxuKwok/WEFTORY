@@ -24,6 +24,9 @@ export const FashionIpc = {
 export const FashionMediaScheme = 'weftory-media';
 export const FashionPluginId = 'weftory-fashion';
 export const FashionBridgeRoute = '/weftory-command';
+export const FeishuPhotoVideoSeconds = 10;
+export const FeishuVideoCardNamespace = 'weftory-video';
+export const FeishuVideoCardAction = { Draft: 'draft', Confirm: 'confirm' } as const;
 
 export const RunState = {
   Queued: 'queued',

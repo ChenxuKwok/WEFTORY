@@ -5,7 +5,7 @@ import { access, copyFile, lstat, mkdir, mkdtemp, readFile, rename, rm, writeFil
 import path from 'node:path';
 import { promisify } from 'node:util';
 
-import { type Asset, FashionError, type Run,ShotDuration, ShotSource } from '../../shared/fashion/contracts';
+import { type Asset, FashionError, FeishuPhotoVideoSeconds, type Run,ShotDuration, ShotSource } from '../../shared/fashion/contracts';
 import { fail } from './errors';
 import type { FashionStore } from './store';
 
@@ -74,11 +74,11 @@ export class FashionMedia {
     return file;
   }
 
-  async importImage(file: string): Promise<Asset> {
+  async importImage(file: string, signal?: AbortSignal): Promise<Asset> {
     const stat = await lstat(file);
     if (!stat.isFile() || stat.size > maxImageBytes || !stat.size) fail(FashionError.Media);
-    const bytes = await readFile(file);
-    return this.saveImage(bytes);
+    const bytes = await readFile(file, { signal });
+    return this.saveImage(bytes, signal);
   }
 
   async saveImage(bytes: Buffer, signal?: AbortSignal): Promise<Asset> {
@@ -147,6 +147,14 @@ export class FashionMedia {
         || video.r_frame_rate !== '30/1' || Math.abs(Number(format.duration) - start) > 0.1) fail(FashionError.Media);
       return this.persist(target, 'video/mp4', signal);
     });
+  }
+
+  async verifyPhotoVideo(asset: Asset, signal: AbortSignal): Promise<void> {
+    const { streams, format } = await this.probe(await this.verify(asset), signal);
+    const video = streams.find(stream => stream.codec_type === 'video');
+    const duration = Number(format.duration);
+    if (!video || !(video.width < video.height) || !Number.isFinite(duration)
+      || Math.abs(duration - FeishuPhotoVideoSeconds) > 0.1) fail(FashionError.Media);
   }
 
   private encoding(): string[] {

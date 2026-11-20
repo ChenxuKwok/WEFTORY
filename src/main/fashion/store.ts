@@ -1,6 +1,6 @@
 import type Database from 'better-sqlite3';
 
-import { type Asset, type Character, DefaultSeedanceModel, type Plan, type Product, type Run, type Settings } from '../../shared/fashion/contracts';
+import { type Asset, type Character, DefaultSeedanceModel, type PhotoVideoPlan, type Plan, type Product, type Run, type Settings } from '../../shared/fashion/contracts';
 
 export const TaskState = {
   Submitting: 'submitting',
@@ -19,6 +19,39 @@ export type ProviderTask = {
   state: typeof TaskState[keyof typeof TaskState];
   remoteId?: string;
   asset?: Asset;
+};
+
+export const PhotoVideoState = {
+  Queued: 'queued',
+  Submitting: 'submitting',
+  Submitted: 'submitted',
+  Ready: 'ready',
+  Finished: 'finished',
+} as const;
+
+export type PhotoVideoJob = {
+  id: string;
+  instance: string;
+  owner: string;
+  product?: Asset;
+  modelPhoto?: Asset;
+  plan?: PhotoVideoPlan;
+  model: string;
+  state: typeof PhotoVideoState[keyof typeof PhotoVideoState];
+  remoteId?: string;
+  video?: Asset;
+  fileKey?: string;
+};
+
+export type PhotoVideoDraft = {
+  id: string;
+  revision: number;
+  conversation: string;
+  cardMessageId?: string;
+  product?: Asset;
+  modelPhoto?: Asset;
+  plan?: PhotoVideoPlan;
+  confirmed?: boolean;
 };
 
 const defaultSettings: Settings = {
@@ -48,6 +81,8 @@ export class FashionStore {
       CREATE TABLE IF NOT EXISTS fashion_feishu_messages (id TEXT PRIMARY KEY, reply TEXT NOT NULL);
       CREATE TABLE IF NOT EXISTS fashion_feishu_codes (id TEXT PRIMARY KEY, data TEXT NOT NULL);
       CREATE TABLE IF NOT EXISTS fashion_deliveries (id TEXT PRIMARY KEY, data TEXT NOT NULL);
+      CREATE TABLE IF NOT EXISTS fashion_photo_videos (id TEXT PRIMARY KEY, data TEXT NOT NULL);
+      CREATE TABLE IF NOT EXISTS fashion_photo_drafts (id TEXT PRIMARY KEY, data TEXT NOT NULL);
     `))();
   }
 
@@ -162,6 +197,27 @@ export class FashionStore {
 
   saveDelivery(id: string, data: object): void {
     this.db.prepare('INSERT OR REPLACE INTO fashion_deliveries VALUES (?, ?)').run(id, JSON.stringify(data));
+  }
+
+  enqueuePhotoVideo(job: PhotoVideoJob): void {
+    this.db.prepare('INSERT OR IGNORE INTO fashion_photo_videos VALUES (?, ?)').run(job.id, JSON.stringify(job));
+  }
+
+  getPhotoDraft(id: string): PhotoVideoDraft | undefined {
+    return this.get('SELECT data FROM fashion_photo_drafts WHERE id = ?', id);
+  }
+
+  savePhotoDraft(id: string, draft: PhotoVideoDraft): void {
+    this.db.prepare('INSERT OR REPLACE INTO fashion_photo_drafts VALUES (?, ?)').run(id, JSON.stringify(draft));
+  }
+
+  savePhotoVideo(job: PhotoVideoJob): void {
+    this.db.prepare('UPDATE fashion_photo_videos SET data = ? WHERE id = ?').run(JSON.stringify(job), job.id);
+  }
+
+  pendingPhotoVideos(): PhotoVideoJob[] {
+    return (this.db.prepare("SELECT data FROM fashion_photo_videos WHERE json_extract(data, '$.state') != ? ORDER BY rowid")
+      .all(PhotoVideoState.Finished) as Array<{ data: string }>).map(row => JSON.parse(row.data) as PhotoVideoJob);
   }
 
   private all<T>(sql: string, ...params: string[]): T[] {

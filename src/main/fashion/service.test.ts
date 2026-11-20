@@ -6,13 +6,15 @@ import path from 'node:path';
 import Database from 'better-sqlite3';
 import { afterEach, describe, expect, test, vi } from 'vitest';
 
-import { type Asset, Decision, DefaultSeedanceModel, FashionError, type Run,RunMode, RunState } from '../../shared/fashion/contracts';
+import { type Asset, Decision, DefaultSeedanceModel, FashionError, FeishuVideoCardAction, type Run,RunMode, RunState } from '../../shared/fashion/contracts';
 import type { FeishuInstanceConfig } from '../im/types';
 import { FashionFeishu } from './feishu';
+import { FeishuVideoDraft } from './feishuVideoDraft';
 import { FashionMedia } from './media';
+import { FeishuPhotoVideoQueue } from './photoVideo';
 import type { FashionProviders } from './providers';
 import { FashionService } from './service';
-import { FashionStore, TaskState } from './store';
+import { FashionStore, PhotoVideoState, TaskState } from './store';
 
 vi.mock('../libs/oneShotModelClient', () => ({}));
 
@@ -37,6 +39,7 @@ function fixture(media?: FashionMedia) {
   const providers = {
     textConfigured: vi.fn(() => true),
     text: vi.fn(async () => JSON.stringify(validPlan)),
+    draftPhotoVideo: vi.fn(async () => ({ model: 'Product only', storyboard: '0–10s: Slow pan' })),
     frameRequest: vi.fn(async () => ({ model: 'image' })),
     generateFrame: vi.fn(async () => asset('image/png')),
     videoRequest: vi.fn(async () => ({ model: 'video' })),
@@ -169,6 +172,72 @@ describe('WEFTORY durable production', () => {
     expect(store.runs()).toHaveLength(0);
     expect(bot.handle(event)).toEqual(bot.handle(event));
     expect(store.runs()).toHaveLength(1);
+  });
+
+  test('requires a valid, current confirmation card before a Feishu draft can enqueue video', async () => {
+    const photo = asset('image/png');
+    const { service, store, providers, settings } = fixture({ importImage: vi.fn(async () => photo) } as unknown as FashionMedia);
+    store.saveSettings(settings, Buffer.from('fixture'));
+    const recipient = { instance: 'bot', owner: 'ou_owner' };
+    const key = 'bot/ou_owner';
+    const send = vi.fn(async (_recipient: typeof recipient, _card: object) => 'om_test_card');
+    const wake = vi.fn();
+    const flow = new FeishuVideoDraft(service, () => '/tmp', send, wake);
+    cleanup.push(() => flow.stop());
+    const untilCard = async (count: number) => {
+      await vi.waitFor(() => expect(send).toHaveBeenCalledTimes(count));
+      return store.getPhotoDraft(key)!;
+    };
+    expect(flow.receive(recipient, 'ou_owner', 'bot/om_photo', 'photo.jpg')).toBe('');
+    flow.open(recipient, 'feishu:user:ou_owner', false);
+    await untilCard(1);
+    flow.receive(recipient, 'ou_owner', 'bot/om_photo', 'photo.jpg');
+    await untilCard(2);
+    flow.receive(recipient, 'ou_owner', 'bot/om_repeated_photo', 'same-photo.jpg');
+    const withPhoto = await untilCard(3);
+    expect(withPhoto.product).toEqual(photo);
+    expect(withPhoto.modelPhoto).toBeUndefined();
+    expect(send.mock.calls[1][1]).toMatchObject({ body: { elements: expect.arrayContaining([
+      expect.objectContaining({ tag: 'form', name: 'video_form', elements: expect.arrayContaining([
+        expect.objectContaining({ tag: 'button', name: 'draft_video', form_action_type: 'submit',
+          behaviors: [expect.objectContaining({ type: 'callback' })] }),
+      ]) }),
+    ]) } });
+    expect(store.pendingPhotoVideos()).toHaveLength(0);
+    flow.action(recipient, 'om_test_card', { action: FeishuVideoCardAction.Draft, draftId: withPhoto.id,
+      revision: withPhoto.revision, script: 'Show the collar' });
+    const review = await untilCard(4);
+    expect(providers.draftPhotoVideo).toHaveBeenCalledWith('', 'Show the collar', false, expect.any(AbortSignal));
+    expect(review.plan?.storyboard).toBe('0–10s: Slow pan');
+    expect(store.pendingPhotoVideos()).toHaveLength(0);
+    const confirm = { action: FeishuVideoCardAction.Confirm, draftId: review.id, revision: review.revision };
+    flow.action(recipient, 'om_unissued_card', confirm);
+    expect(store.pendingPhotoVideos()).toHaveLength(0);
+    flow.action(recipient, 'om_test_card', confirm);
+    flow.action(recipient, 'om_test_card', confirm);
+    expect(store.pendingPhotoVideos()).toEqual([expect.objectContaining({ product: photo, plan: review.plan })]);
+    expect(wake).toHaveBeenCalledTimes(1);
+  });
+
+  test('deduplicates a Feishu photo across deliveries and resumes an existing Ark task', async () => {
+    const clip = asset('video/mp4');
+    const media = { verifyPhotoVideo: vi.fn(async () => {}) } as unknown as FashionMedia;
+    const { service, store, providers } = fixture(media);
+    providers.getVideo.mockResolvedValue(clip);
+    const deliver = vi.fn(async () => {});
+    const queue = new FeishuPhotoVideoQueue(service, () => true, deliver);
+    cleanup.push(() => queue.stop());
+    const job = { id: 'bot/message', instance: 'bot', owner: 'ou_owner',
+      model: DefaultSeedanceModel, state: PhotoVideoState.Submitted, remoteId: 'ark-already-paid' };
+    store.enqueuePhotoVideo(job);
+    store.enqueuePhotoVideo({ ...job, state: PhotoVideoState.Queued });
+    queue.wake();
+    await vi.waitFor(() => expect(store.pendingPhotoVideos()).toHaveLength(0));
+    expect(providers.getVideo).toHaveBeenCalledExactlyOnceWith(job.remoteId, expect.any(AbortSignal));
+    expect(providers.submitVideo).not.toHaveBeenCalled();
+    expect(deliver).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ video: clip, id: job.id }));
+    store.enqueuePhotoVideo(job);
+    expect(store.pendingPhotoVideos()).toHaveLength(0);
   });
 
   test('uses real FFmpeg to produce a verified 21-second subtitle-burned demo where available', async context => {

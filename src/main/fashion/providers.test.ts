@@ -4,11 +4,18 @@ import { describe, expect, test, vi } from 'vitest';
 
 import { DefaultSeedanceModel, FashionError, type Run, ShotSource } from '../../shared/fashion/contracts';
 import type { FashionMedia } from './media';
-import { FashionProviders } from './providers';
+import { FashionProviders, parsePhotoVideoDraft } from './providers';
 
 vi.mock('../libs/oneShotModelClient', () => ({}));
 
 describe('Ark video adapter', () => {
+  test('renders model-generated shot arrays and accepts a missing model description', () => {
+    expect(parsePhotoVideoDraft('{"model":null,"storyboard":[{"time":"0–4s","visual":"Wide shot"},"4–10s: Close-up"]}',
+      'Use the reference model')).toEqual({
+      model: 'Use the reference model',
+      storyboard: '0–4s · Wide shot\n4–10s: Close-up',
+    });
+  });
   test('submits the asynchronous provider request and cancels the same task', async () => {
     const request = vi.fn<typeof fetch>()
       .mockResolvedValueOnce(Response.json({ id: 'cgt-example-1' }))
@@ -52,5 +59,16 @@ describe('Ark video adapter', () => {
     const providers = new FashionProviders({} as FashionMedia, () => 'fixture-key', () => null, vi.fn(), request);
     await expect(providers.getVideo('cgt-example-1', new AbortController().signal)).rejects.toThrow(FashionError.Provider);
     expect(request).toHaveBeenCalledTimes(1);
+  });
+
+  test('submits one garment photo as the reference for a ten-second portrait clip', async () => {
+    const media = { verify: vi.fn(async () => fileURLToPath(import.meta.url)) } as unknown as FashionMedia;
+    const providers = new FashionProviders(media, () => 'fixture-key', () => null, vi.fn());
+    const photo = { id: 'reference', sha256: 'a'.repeat(64), mime: 'image/png' };
+    const body = await providers.photoVideoRequest(DefaultSeedanceModel, photo, { model: 'Product only', storyboard: 'Slow pan' });
+    expect(body).toMatchObject({ model: DefaultSeedanceModel, ratio: '9:16', duration: 10 });
+    expect(body.content.slice(1)).toEqual([
+      { type: 'image_url', image_url: { url: expect.stringMatching(/^data:image\/png;base64,/) }, role: 'reference_image' },
+    ]);
   });
 });
