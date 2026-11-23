@@ -15,6 +15,7 @@
     "content-planner": { "order": 120, "enabled": true },
     "article-writer": { "order": 121, "enabled": true },
     "daily-trending": { "order": 122, "enabled": true },
+    "redfox-trending": { "order": 123, "enabled": true },
     "local-tools": { "order": 200, "enabled": true },
     "weather": { "order": 210, "enabled": true },
     "imap-smtp-email": { "order": 211, "enabled": true },

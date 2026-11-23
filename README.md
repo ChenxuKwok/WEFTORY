@@ -100,6 +100,17 @@ Built by [NetEase Youdao](https://www.youdao.com/), LobsterAI is the first open-
 | Screen documents | "Turn the resumes in this folder into a screening sheet and shortlist the strongest candidates against the JD." |
 | Run scheduled work | "Every weekday at 9 AM, collect yesterday's AI news and send me a concise digest." |
 
+## WEFTORY RedFox trends
+
+Run from the repository root with Python 3 (standard library only):
+
+```sh
+python -X utf8 SKILLs/redfox-trending/redfox.py
+python -X utf8 SKILLs/redfox-trending/redfox.py --json
+```
+
+Enter the RedFox API key at the hidden terminal prompt, or set `REDFOX_API_KEY` in the calling process. The skill returns up to 15 entries each for current Douyin/Xiaohongshu trends, recent growth, and fashion topics. Growth uses comparable snapshots from the last 12 hours and can be empty on the first run. Its default metric is platform heat. History is stored in `~/.weftory/redfox/history.sqlite3`; override it with `--history-path`. See the [Chinese usage notes](README_zh.md#weftory-红狐查榜).
+
 ## Quick start
 
 1. **Install LobsterAI.** Download it from the [official website](https://lobsterai.youdao.com/#/download-list), or get the latest release directly:

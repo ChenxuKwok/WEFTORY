@@ -100,6 +100,19 @@ LobsterAI 由[网易有道](https://www.youdao.com/)出品，是国内大厂首�
 | 文档筛选 | "把这个文件夹里的简历整理成筛选表，对照 JD 选出最匹配的人。" |
 | 定时任务 | "每个工作日早上 9 点收集昨天的 AI 新闻，并发我一份简洁摘要。" |
 
+## WEFTORY 红狐查榜
+
+在仓库根目录使用 Python 3 运行，依赖均为标准库。首次在终端按提示隐藏输入红狐 Key；自动调用时给运行进程设置 `REDFOX_API_KEY`。
+
+```sh
+python -X utf8 SKILLs/redfox-trending/redfox.py
+python -X utf8 SKILLs/redfox-trending/redfox.py --json
+```
+
+当前榜按抖音、小红书各自榜位交错展示；增长榜按最近 12 小时的同话题快照计算；女装榜优先收录热榜命中项，按需从抖音服饰作品标签补充。每榜最多 15 条。每次查询请求两个平台热榜，女装样本不足时最多额外搜索三次。
+
+热度历史默认保存在用户目录的 `.weftory/redfox/history.sqlite3`，可用 `--history-path` 指定。首次查询或源快照尚未更新时，增长榜可能为空。默认增速单位是平台热度；如需计算播放增速，设置 `WEFTORY_VIEWS_SNAPSHOTS` 指向累计播放量快照 JSON。供后续集成调用的入口为 [redfox.py](SKILLs/redfox-trending/redfox.py) 中的 `get_boards()`。
+
 ## 快速上手
 
 1. **安装 LobsterAI。** 从[官网](https://lobsterai.youdao.com/#/download-list)下载，或直接获取最新版本：
